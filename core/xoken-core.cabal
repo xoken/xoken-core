@@ -18,7 +18,7 @@ extra-source-files:
     data/sig_nonstrict.json
     data/sig_strict.json
     data/sighash.json
-    README.md
+    ../README.md
     CHANGELOG.md
 
 source-repository head

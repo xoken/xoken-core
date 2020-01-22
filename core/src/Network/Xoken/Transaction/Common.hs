@@ -18,12 +18,14 @@ module Network.Xoken.Transaction.Common
     , TxOut(..)
     , OutPoint(..)
     , TxHash(..)
+    , TxShortHash(..)
     , WitnessData
     , WitnessStack
     , WitnessStackItem
     , txHash
     , hexToTxHash
     , txHashToHex
+    , getTxShortHash
     , nosigTxHash
     , nullOutPoint
     , genesisTx
@@ -91,6 +93,11 @@ hexToTxHash hex = do
     bs <- B.reverse <$> decodeHex hex
     h <- either (const Nothing) Just (S.decode bs)
     return $ TxHash h
+
+type TxShortHash = String
+
+getTxShortHash :: TxHash -> TxShortHash
+getTxShortHash h = T.unpack $ T.take 4 $ encodeHex (B.reverse (S.encode h))
 
 -- | Witness stack for SegWit transactions.
 type WitnessData = [WitnessStack]

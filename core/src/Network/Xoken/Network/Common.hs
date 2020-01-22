@@ -56,6 +56,7 @@ import Data.String.Conversions (cs)
 import Data.Word (Word32, Word64)
 import Network.Socket (SockAddr(..))
 import Network.Xoken.Crypto.Hash
+import Network.Xoken.Util
 import Text.Read as R
 
 -- | Network address with a timestamp.
@@ -180,7 +181,10 @@ data InvVector =
                 -- | 256-bit hash of object
         , invHash :: !Hash256
         }
-    deriving (Eq, Show)
+    deriving (Eq)
+
+instance Show InvVector where
+    showsPrec _ h = shows (encodeHex (B.reverse (encode h)))
 
 instance Serialize InvVector where
     get = InvVector <$> S.get <*> S.get
@@ -514,6 +518,7 @@ stringToCommand str =
         "getheaders" -> MCGetHeaders
         "tx" -> MCTx
         "block" -> MCBlock
+        "confTx" -> MCConfTx
         "merkleblock" -> MCMerkleBlock
         "headers" -> MCHeaders
         "getaddr" -> MCGetAddr
@@ -541,6 +546,7 @@ commandToString mc =
         MCGetBlocks -> "getblocks"
         MCGetHeaders -> "getheaders"
         MCTx -> "tx"
+        MCConfTx -> "confTx"
         MCBlock -> "block"
         MCMerkleBlock -> "merkleblock"
         MCHeaders -> "headers"
