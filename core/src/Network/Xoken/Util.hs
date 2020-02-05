@@ -2,9 +2,9 @@
 
 {-|
 Module      : Network.Xoken.Util
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 
@@ -37,12 +37,7 @@ module Network.Xoken.Util
 
 import Control.Monad (guard)
 import Control.Monad.Except (ExceptT(..), liftEither)
-import Data.Aeson.Types
-    ( Options(..)
-    , SumEncoding(..)
-    , defaultOptions
-    , defaultTaggedObject
-    )
+import Data.Aeson.Types (Options(..), SumEncoding(..), defaultOptions, defaultTaggedObject)
 import Data.Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -162,9 +157,7 @@ dropFieldLabel n = defaultOptions {fieldLabelModifier = map toLower . drop n}
 dropSumLabels :: Int -> Int -> String -> Options
 dropSumLabels c f tag =
     (dropFieldLabel f)
-        { constructorTagModifier = map toLower . drop c
-        , sumEncoding = defaultTaggedObject {tagFieldName = tag}
-        }
+        {constructorTagModifier = map toLower . drop c, sumEncoding = defaultTaggedObject {tagFieldName = tag}}
 
 -- | Convert from one power-of-two base to another, as long as it fits in a
 -- 'Word'.

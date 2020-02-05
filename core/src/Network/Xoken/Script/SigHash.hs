@@ -4,9 +4,9 @@
 
 {-|
 Module      : Network.Xoken.Script.SigHash
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 
@@ -18,9 +18,7 @@ module Network.Xoken.Script.SigHash
     , sigHashAll
     , sigHashNone
     , sigHashSingle
-    , hasAnyoneCanPayFlag
     , hasForkIdFlag
-    , setAnyoneCanPayFlag
     , setForkIdFlag
     , isSigHashAll
     , isSigHashNone
@@ -67,8 +65,6 @@ data SigHashFlag
       -- ^ sign the output index corresponding to the input
     | SIGHASH_FORKID
       -- ^ replay protection for Bitcoin Cash transactions
-    | SIGHASH_ANYONECANPAY
-      -- ^ new inputs can be added
     deriving (Eq, Ord, Show, Read, Generic)
 
 instance Hashable SigHashFlag
@@ -78,12 +74,10 @@ instance Enum SigHashFlag where
     fromEnum SIGHASH_NONE = 0x02
     fromEnum SIGHASH_SINGLE = 0x03
     fromEnum SIGHASH_FORKID = 0x40
-    fromEnum SIGHASH_ANYONECANPAY = 0x80
     toEnum 0x01 = SIGHASH_ALL
     toEnum 0x02 = SIGHASH_NONE
     toEnum 0x03 = SIGHASH_SINGLE
     toEnum 0x40 = SIGHASH_FORKID
-    toEnum 0x80 = SIGHASH_ANYONECANPAY
     toEnum _ = error "Not a valid sighash flag"
 
 -- | Data type representing the different ways a transaction can be signed.
@@ -94,9 +88,6 @@ instance Enum SigHashFlag where
 -- hash, then you can change that part of the transaction after producing a
 -- signature without invalidating that signature.
 --
--- If the 'SIGHASH_ANYONECANPAY' flag is set (true), then only the current input
--- is signed. Otherwise, all of the inputs of a transaction are signed. The
--- default value for 'SIGHASH_ANYONECANPAY' is unset (false).
 newtype SigHash =
     SigHash Word32
     deriving (Eq, Ord, Enum, Bits, Num, Real, Integral, Show, Read, Generic, Hashable)
@@ -123,25 +114,13 @@ sigHashSingle = fromIntegral $ fromEnum SIGHASH_SINGLE
 sigHashForkId :: SigHash
 sigHashForkId = fromIntegral $ fromEnum SIGHASH_FORKID
 
--- | SIGHASH_ANYONECANPAY as a byte.
-sigHashAnyoneCanPay :: SigHash
-sigHashAnyoneCanPay = fromIntegral $ fromEnum SIGHASH_ANYONECANPAY
-
 -- | Set SIGHASH_FORKID flag.
 setForkIdFlag :: SigHash -> SigHash
 setForkIdFlag = (.|. sigHashForkId)
 
--- | Set SIGHASH_ANYONECANPAY flag.
-setAnyoneCanPayFlag :: SigHash -> SigHash
-setAnyoneCanPayFlag = (.|. sigHashAnyoneCanPay)
-
 -- | Is the SIGHASH_FORKID flag set?
 hasForkIdFlag :: SigHash -> Bool
 hasForkIdFlag = (/= 0) . (.&. sigHashForkId)
-
--- | Is the SIGHASH_ANYONECANPAY flag set?
-hasAnyoneCanPayFlag :: SigHash -> Bool
-hasAnyoneCanPayFlag = (/= 0) . (.&. sigHashAnyoneCanPay)
 
 -- | Returns 'True' if the 'SigHash' has the value 'SIGHASH_ALL'.
 isSigHashAll :: SigHash -> Bool
@@ -200,7 +179,6 @@ txSigHash net tx out v i sh
 -- | Build transaction inputs for computing sighashes.
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]
 buildInputs txins out i sh
-    | hasAnyoneCanPayFlag sh = [(txins !! i) {scriptInput = encode out}]
     | isSigHashAll sh || isSigHashUnknown sh = single
     | otherwise = zipWith noSeq single [0 ..]
   where
@@ -245,11 +223,8 @@ txSigHashForkId net tx out v i sh =
         putWord32le $ fromIntegral $ sigHashAddNetworkId net sh
   where
     hashPrevouts
-        | not $ hasAnyoneCanPayFlag sh = doubleSHA256 $ runPut $ mapM_ (put . prevOutput) $ txIn tx
         | otherwise = zeros
     hashSequence
-        | not (hasAnyoneCanPayFlag sh) && not (isSigHashSingle sh) && not (isSigHashNone sh) =
-            doubleSHA256 $ runPut $ mapM_ (putWord32le . txInSequence) $ txIn tx
         | otherwise = zeros
     hashOutputs
         | not (isSigHashSingle sh) && not (isSigHashNone sh) = doubleSHA256 $ runPut $ mapM_ put $ txOut tx

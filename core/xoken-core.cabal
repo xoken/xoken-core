@@ -8,8 +8,6 @@ category:       Bitcoin, Network
 homepage:       http://github.com/stoichammer
 bug-reports:    http://github.com/stoichammer
 author:         stoichammer
-license:        PublicDomain
-license-file:   UNLICENSE
 build-type:     Simple
 extra-source-files:
     data/forkid_script_tests.json
@@ -30,8 +28,6 @@ library
       Xoken
       Network.Xoken.Address
       Network.Xoken.Address.Base58
-      Network.Xoken.Address.CashAddr
-      Network.Xoken.Address.Bech32
       Network.Xoken.Block
       Network.Xoken.Block.Headers
       Network.Xoken.Block.Merkle
@@ -56,7 +52,6 @@ library
       Network.Xoken.Keys.Common
       Network.Xoken.Keys.Extended
       Network.Xoken.Keys.Mnemonic
-      Network.Xoken.Network.Bloom
       Network.Xoken.Script.Common
       Network.Xoken.Script.SigHash
       Network.Xoken.Test.Address
@@ -106,8 +101,7 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Network.Xoken.Address.Bech32Spec
-      Network.Xoken.Address.CashAddrSpec
+      
       Network.Xoken.AddressSpec
       Network.Xoken.BlockSpec
       Network.Xoken.Crypto.HashSpec

@@ -1,8 +1,8 @@
 {-|
 Module      : Network.Xoken.Test.Message
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 -}
@@ -37,9 +37,6 @@ arbitraryMessage net =
         , MMerkleBlock <$> arbitraryMerkleBlock
         , MHeaders <$> arbitraryHeaders
         , return MGetAddr
-        , MFilterLoad <$> arbitraryFilterLoad
-        , MFilterAdd <$> arbitraryFilterAdd
-        , return MFilterClear
         , MPing <$> arbitraryPing
         , MPong <$> arbitraryPong
         , MAlert <$> arbitraryAlert

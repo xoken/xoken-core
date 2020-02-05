@@ -1,9 +1,9 @@
 {-|
 Module      : Xoken
 Description : Bitcoin (BTC/BCH) Libraries for Haskell
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 
@@ -11,7 +11,7 @@ This module exports almost all of Xoken Core, excluding only a few highly
 specialized address and block-related functions.
 -}
 module Xoken
-      -- * Address (Base58, Bech32, CashAddr)
+      -- * Address (Base58)
     ( module Address
       -- * Network Messages
     , module Network

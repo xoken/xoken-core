@@ -1,8 +1,8 @@
 {-|
 Module      : Network.Xoken.Network.Message
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 
@@ -30,7 +30,6 @@ import Network.Xoken.Block.Common
 import Network.Xoken.Block.Merkle
 import Network.Xoken.Constants
 import Network.Xoken.Crypto.Hash
-import Network.Xoken.Network.Bloom
 import Network.Xoken.Network.Common
 import Network.Xoken.Transaction.Common
 
@@ -78,9 +77,6 @@ data Message
     | MMerkleBlock !MerkleBlock
     | MHeaders !Headers
     | MGetAddr
-    | MFilterLoad !FilterLoad
-    | MFilterAdd !FilterAdd
-    | MFilterClear
     | MPing !Ping
     | MPong !Pong
     | MAlert !Alert
@@ -105,9 +101,6 @@ msgType (MConfTx _) = MCConfTx
 msgType (MBlock _) = MCBlock
 msgType (MMerkleBlock _) = MCMerkleBlock
 msgType (MHeaders _) = MCHeaders
-msgType (MFilterLoad _) = MCFilterLoad
-msgType (MFilterAdd _) = MCFilterAdd
-msgType MFilterClear = MCFilterClear
 msgType (MPing _) = MCPing
 msgType (MPong _) = MCPong
 msgType (MAlert _) = MCAlert
@@ -144,8 +137,6 @@ getMessage net = do
                  -- MCBlock -> MBlock <$> get
                  MCMerkleBlock -> MMerkleBlock <$> get
                  MCHeaders -> MHeaders <$> get
-                 MCFilterLoad -> MFilterLoad <$> get
-                 MCFilterAdd -> MFilterAdd <$> get
                  MCPing -> MPing <$> get
                  MCPong -> MPong <$> get
                  MCAlert -> MAlert <$> get
@@ -154,7 +145,6 @@ getMessage net = do
         else case cmd of
                  MCGetAddr -> return MGetAddr
                  MCVerAck -> return MVerAck
-                 MCFilterClear -> return MFilterClear
                  MCMempool -> return MMempool
                  MCSendHeaders -> return MSendHeaders
                  _ -> fail $ "get: Invalid command " ++ show cmd
@@ -177,9 +167,6 @@ putMessage net msg = do
                 MMerkleBlock m -> (MCMerkleBlock, encode m)
                 MHeaders m -> (MCHeaders, encode m)
                 MGetAddr -> (MCGetAddr, BS.empty)
-                MFilterLoad m -> (MCFilterLoad, encode m)
-                MFilterAdd m -> (MCFilterAdd, encode m)
-                MFilterClear -> (MCFilterClear, BS.empty)
                 MPing m -> (MCPing, encode m)
                 MPong m -> (MCPong, encode m)
                 MAlert m -> (MCAlert, encode m)

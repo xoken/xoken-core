@@ -5,20 +5,18 @@
 
 {-|
 Module      : Network.Xoken.Address
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 
-Base58, CashAddr, Bech32 address and WIF private key serialization support.
+Base58 address and WIF private key serialization support.
 -}
 module Network.Xoken.Address
     ( Address(..)
     , isPubKeyAddress
     , isScriptAddress
-    , isWitnessPubKeyAddress
-    , isWitnessScriptAddress
     , addrToString
     , stringToAddr
     , addrToJSON
@@ -57,15 +55,13 @@ import Data.Serialize as S
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Network.Xoken.Address.Base58
-import Network.Xoken.Address.Bech32
-import Network.Xoken.Address.CashAddr
 import Network.Xoken.Constants
 import Network.Xoken.Crypto
 import Network.Xoken.Keys.Common
 import Network.Xoken.Script
 import Network.Xoken.Util
 
--- | Address format for Bitcoin and Bitcoin Cash.
+-- | Address format for Bitcoin SV
 data Address
     -- | pay to public key hash (regular)
     = PubKeyAddress
@@ -99,17 +95,6 @@ isScriptAddress :: Address -> Bool
 isScriptAddress ScriptAddress {} = True
 isScriptAddress _ = False
 
--- | 'Address' pays to a witness public key hash. Only valid for SegWit
--- networks.
-isWitnessPubKeyAddress :: Address -> Bool
-isWitnessPubKeyAddress WitnessPubKeyAddress {} = True
-isWitnessPubKeyAddress _ = False
-
--- | 'Address' pays to a witness script hash. Only valid for SegWit networks.
-isWitnessScriptAddress :: Address -> Bool
-isWitnessScriptAddress WitnessScriptAddress {} = True
-isWitnessScriptAddress _ = False
-
 -- | Deserializer for binary 'Base58' addresses.
 base58get :: Network -> Get Address
 base58get net = do
@@ -135,8 +120,7 @@ base58put _ _ = error "Cannot serialize this address as Base58"
 addrToJSON :: Network -> Address -> Value
 addrToJSON net a = toJSON (addrToString net a)
 
--- | JSON parsing for Bitcoin addresses. Works with 'Base58', 'CashAddr' and
--- 'Bech32'.
+-- | JSON parsing for Bitcoin addresses. Works with 'Base58'
 addrFromJSON :: Network -> Value -> Parser Address
 addrFromJSON net =
     withText "address" $ \t ->
@@ -144,51 +128,17 @@ addrFromJSON net =
             Nothing -> fail "could not decode address"
             Just x -> return x
 
--- | Convert address to human-readable string. Uses 'Base58', 'Bech32', or
--- 'CashAddr' depending on network.
+-- | Convert address to human-readable string. Uses 'Base58'
 addrToString :: Network -> Address -> Maybe Text
-addrToString net a@PubKeyAddress {getAddrHash160 = h}
-    | isNothing (getCashAddrPrefix net) = Just . encodeBase58Check . runPut $ base58put net a
-    | otherwise = cashAddrEncode net 0 (S.encode h)
-addrToString net a@ScriptAddress {getAddrHash160 = h}
-    | isNothing (getCashAddrPrefix net) = Just . encodeBase58Check . runPut $ base58put net a
-    | otherwise = cashAddrEncode net 1 (S.encode h)
+addrToString net a@PubKeyAddress {getAddrHash160 = h} = Just . encodeBase58Check . runPut $ base58put net a
+addrToString net a@ScriptAddress {getAddrHash160 = h} = Just . encodeBase58Check . runPut $ base58put net a
 
--- addrToString net WitnessPubKeyAddress {getAddrHash160 = h} = do
---     hrp <- getBech32Prefix net
---     segwitEncode hrp 0 (B.unpack (S.encode h))
--- addrToString net WitnessScriptAddress {getAddrHash256 = h} = do
---     hrp <- getBech32Prefix net
---     segwitEncode hrp 0 (B.unpack (S.encode h))
 --
--- | Parse 'Base58', 'Bech32' or 'CashAddr' address, depending on network.
+-- | Parse 'Base58' address
 stringToAddr :: Network -> Text -> Maybe Address
-stringToAddr net bs = cash <|> segwit <|> b58
+stringToAddr net bs = b58
   where
     b58 = eitherToMaybe . runGet (base58get net) =<< decodeBase58Check bs
-    cash =
-        cashAddrDecode net bs >>= \(ver, bs') ->
-            case ver of
-                0 -> do
-                    h <- eitherToMaybe (S.decode bs')
-                    return $ PubKeyAddress h
-                1 -> do
-                    h <- eitherToMaybe (S.decode bs')
-                    return $ ScriptAddress h
-                _ -> Nothing
-    segwit = do
-        hrp <- getBech32Prefix net
-        (ver, bs') <- segwitDecode hrp bs
-        guard (ver == 0)
-        let bs'' = B.pack bs'
-        case B.length bs'' of
-            20 -> do
-                h <- eitherToMaybe (S.decode bs'')
-                return $ WitnessPubKeyAddress h
-            32 -> do
-                h <- eitherToMaybe (S.decode bs'')
-                return $ WitnessScriptAddress h
-            _ -> Nothing
 
 -- | Obtain a standard pay-to-public-key-hash address from a public key.
 pubKeyAddr :: PubKeyI -> Address

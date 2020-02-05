@@ -2,14 +2,13 @@
 
 {-|
 Module      : Network.Xoken.Address.Base58
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 
-Support for legacy 'Base58' addresses. Superseded by Bech32 for Bitcoin SegWit
-(BTC) and CashAddr for Bitcoin Cash (BCH).
+Support for legacy 'Base58' addresses. 
 -}
 module Network.Xoken.Address.Base58
     ( Base58

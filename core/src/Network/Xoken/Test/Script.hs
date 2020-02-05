@@ -2,9 +2,9 @@
 
 {-|
 Module      : Network.Xoken.Test.Script
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 -}
@@ -159,24 +159,7 @@ arbitraryScriptOp =
 -- | Arbtirary 'ScriptOp' with a value in @[OP_1 .. OP_16]@.
 arbitraryIntScriptOp :: Gen ScriptOp
 arbitraryIntScriptOp =
-    elements
-        [ OP_1
-        , OP_2
-        , OP_3
-        , OP_4
-        , OP_5
-        , OP_6
-        , OP_7
-        , OP_8
-        , OP_9
-        , OP_10
-        , OP_11
-        , OP_12
-        , OP_13
-        , OP_14
-        , OP_15
-        , OP_16
-        ]
+    elements [OP_1, OP_2, OP_3, OP_4, OP_5, OP_6, OP_7, OP_8, OP_9, OP_10, OP_11, OP_12, OP_13, OP_14, OP_15, OP_16]
 
 -- | Arbitrary 'PushDataType'.
 arbitraryPushDataType :: Gen PushDataType
@@ -195,7 +178,7 @@ arbitraryValidSigHash net = do
         if isJust (getSigHashForkId net)
             then [id, setForkIdFlag]
             else [id]
-    f2 <- elements [id, setAnyoneCanPayFlag]
+    f2 <- elements []
     return $ f1 $ f2 sh
 
 -- | Arbitrary message hash, private key and corresponding 'TxSignature'. The
@@ -208,16 +191,11 @@ arbitraryTxSignature net = do
     let txsig = TxSignature sig sh
     return (TxHash m, key, txsig)
   where
-    filterBad sh =
-        not $
-        isSigHashUnknown sh ||
-        isNothing (getSigHashForkId net) && hasForkIdFlag sh
+    filterBad sh = not $ isSigHashUnknown sh || isNothing (getSigHashForkId net) && hasForkIdFlag sh
 
 -- | Arbitrary transaction signature that could also be empty.
 arbitraryTxSignatureEmpty :: Network -> Gen TxSignature
-arbitraryTxSignatureEmpty net =
-    frequency
-        [(1, return TxSignatureEmpty), (10, lst3 <$> arbitraryTxSignature net)]
+arbitraryTxSignatureEmpty net = frequency [(1, return TxSignatureEmpty), (10, lst3 <$> arbitraryTxSignature net)]
 
 -- | Arbitrary m of n parameters.
 arbitraryMSParam :: Gen (Int, Int)
@@ -229,22 +207,12 @@ arbitraryMSParam = do
 -- | Arbitrary 'ScriptOutput' (Can by any valid type).
 arbitraryScriptOutput :: Network -> Gen ScriptOutput
 arbitraryScriptOutput net =
-    oneof $
-    [ arbitraryPKOutput
-    , arbitraryPKHashOutput
-    , arbitraryMSOutput
-    , arbitrarySHOutput
-    , arbitraryDCOutput
-    ] ++
-    if getSegWit net
-        then [arbitraryWPKHashOutput, arbitraryWSHOutput]
-        else []
+    oneof $ [arbitraryPKOutput, arbitraryPKHashOutput, arbitraryMSOutput, arbitrarySHOutput, arbitraryDCOutput] ++ []
 
 -- | Arbitrary 'ScriptOutput' of type 'PayPK', 'PayPKHash' or 'PayMS'
 -- (Not 'PayScriptHash', 'DataCarrier', or SegWit)
 arbitrarySimpleOutput :: Gen ScriptOutput
-arbitrarySimpleOutput =
-    oneof [arbitraryPKOutput, arbitraryPKHashOutput, arbitraryMSOutput]
+arbitrarySimpleOutput = oneof [arbitraryPKOutput, arbitraryPKHashOutput, arbitraryMSOutput]
 
 -- | Arbitrary 'ScriptOutput' of type 'PayPK'
 arbitraryPKOutput :: Gen ScriptOutput
@@ -273,9 +241,7 @@ arbitraryMSOutput = do
 arbitraryMSOutputC :: Gen ScriptOutput
 arbitraryMSOutputC = do
     (m, n) <- arbitraryMSParam
-    keys <-
-        map snd <$>
-        vectorOf n (arbitraryKeyPair `suchThat` (pubKeyCompressed . snd))
+    keys <- map snd <$> vectorOf n (arbitraryKeyPair `suchThat` (pubKeyCompressed . snd))
     return $ PayMulSig keys m
 
 -- | Arbitrary 'ScriptOutput' of type 'PayScriptHash'.
@@ -289,18 +255,12 @@ arbitraryDCOutput = DataCarrier <$> arbitraryBS1
 -- | Arbitrary 'ScriptInput'.
 arbitraryScriptInput :: Network -> Gen ScriptInput
 arbitraryScriptInput net =
-    oneof
-        [ arbitraryPKInput net
-        , arbitraryPKHashInput net
-        , arbitraryMSInput net
-        , arbitrarySHInput net
-        ]
+    oneof [arbitraryPKInput net, arbitraryPKHashInput net, arbitraryMSInput net, arbitrarySHInput net]
 
 -- | Arbitrary 'ScriptInput' of type 'SpendPK', 'SpendPKHash' or 'SpendMulSig'
 -- (not 'ScriptHashInput')
 arbitrarySimpleInput :: Network -> Gen ScriptInput
-arbitrarySimpleInput net =
-    oneof [arbitraryPKInput net, arbitraryPKHashInput net, arbitraryMSInput net]
+arbitrarySimpleInput net = oneof [arbitraryPKInput net, arbitraryPKHashInput net, arbitraryMSInput net]
 
 -- | Arbitrary 'ScriptInput' of type 'SpendPK'.
 arbitraryPKInput :: Network -> Gen ScriptInput

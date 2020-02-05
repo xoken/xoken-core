@@ -4,9 +4,9 @@
 
 {-|
 Module      : Network.Xoken.Script.Common
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 
@@ -42,13 +42,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import Data.Hashable
 import Data.Serialize as S
-import Data.Serialize.Get
-    ( getByteString
-    , getWord16le
-    , getWord32le
-    , getWord8
-    , isEmpty
-    )
+import Data.Serialize.Get (getByteString, getWord16le, getWord32le, getWord8, isEmpty)
 import Data.Serialize.Put (putByteString, putWord16le, putWord32le, putWord8)
 import Data.Word (Word8)
 import GHC.Generics (Generic)
@@ -213,9 +207,6 @@ data ScriptOp
     | OP_NOP8
     | OP_NOP9
     | OP_NOP10
-      -- Bitcoin Cash Nov 2018 hard fork
-    | OP_CHECKDATASIG
-    | OP_CHECKDATASIGVERIFY
       -- Other
     | OP_PUBKEYHASH
     | OP_PUBKEY
@@ -356,9 +347,6 @@ instance Serialize ScriptOp where
             | op == 0xb7 = return OP_NOP8
             | op == 0xb8 = return OP_NOP9
             | op == 0xb9 = return OP_NOP10
-            -- Bitcoin Cash Nov 2018 hard fork
-            | op == 0xba = return OP_CHECKDATASIG
-            | op == 0xbb = return OP_CHECKDATASIGVERIFY
             -- Constants
             | op == 0xfd = return OP_PUBKEYHASH
             | op == 0xfe = return OP_PUBKEY
@@ -369,22 +357,18 @@ instance Serialize ScriptOp where
                 let len = B.length payload
                 case optype of
                     OPCODE -> do
-                        unless (len <= 0x4b) $
-                            fail "OP_PUSHDATA OPCODE: Payload size too big"
+                        unless (len <= 0x4b) $ fail "OP_PUSHDATA OPCODE: Payload size too big"
                         putWord8 $ fromIntegral len
                     OPDATA1 -> do
-                        unless (len <= 0xff) $
-                            fail "OP_PUSHDATA OPDATA1: Payload size too big"
+                        unless (len <= 0xff) $ fail "OP_PUSHDATA OPDATA1: Payload size too big"
                         putWord8 0x4c
                         putWord8 $ fromIntegral len
                     OPDATA2 -> do
-                        unless (len <= 0xffff) $
-                            fail "OP_PUSHDATA OPDATA2: Payload size too big"
+                        unless (len <= 0xffff) $ fail "OP_PUSHDATA OPDATA2: Payload size too big"
                         putWord8 0x4d
                         putWord16le $ fromIntegral len
                     OPDATA4 -> do
-                        unless (len <= 0x7fffffff) $
-                            fail "OP_PUSHDATA OPDATA4: Payload size too big"
+                        unless (len <= 0x7fffffff) $ fail "OP_PUSHDATA OPDATA4: Payload size too big"
                         putWord8 0x4e
                         putWord32le $ fromIntegral len
                 putByteString payload
@@ -509,9 +493,6 @@ instance Serialize ScriptOp where
             OP_NOP8 -> putWord8 0xb7
             OP_NOP9 -> putWord8 0xb8
             OP_NOP10 -> putWord8 0xb9
-        -- Bitcoin Cash Nov 2018 hard fork
-            OP_CHECKDATASIG -> putWord8 0xba
-            OP_CHECKDATASIGVERIFY -> putWord8 0xbb
 
 -- | Check whether opcode is only data.
 isPushOp :: ScriptOp -> Bool
@@ -555,8 +536,7 @@ intToScriptOp i
     | i `elem` [1 .. 16] = op
     | otherwise = err
   where
-    op =
-        either (const err) id . S.decode . B.singleton . fromIntegral $ i + 0x50
+    op = either (const err) id . S.decode . B.singleton . fromIntegral $ i + 0x50
     err = error $ "intToScriptOp: Invalid integer " ++ show i
 
 -- | Decode 'ScriptOp' @[OP_1 .. OP_16]@ to integers @[1 .. 16]@. This functions
@@ -606,9 +586,7 @@ data ScriptOutput
 instance FromJSON ScriptOutput where
     parseJSON =
         withText "scriptoutput" $ \t ->
-            either fail return $
-            maybeToEither "scriptoutput not hex" (decodeHex t) >>=
-            decodeOutputBS
+            either fail return $ maybeToEither "scriptoutput not hex" (decodeHex t) >>= decodeOutputBS
 
 instance ToJSON ScriptOutput where
     toJSON = String . encodeHex . encodeOutputBS
@@ -657,11 +635,9 @@ decodeOutput s =
           of
         [OP_PUSHDATA bs _, OP_CHECKSIG] -> PayPK <$> S.decode bs
     -- Pay to PubKey Hash
-        [OP_DUP, OP_HASH160, OP_PUSHDATA bs _, OP_EQUALVERIFY, OP_CHECKSIG] ->
-            PayPKHash <$> S.decode bs
+        [OP_DUP, OP_HASH160, OP_PUSHDATA bs _, OP_EQUALVERIFY, OP_CHECKSIG] -> PayPKHash <$> S.decode bs
     -- Pay to Script Hash
-        [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] ->
-            PayScriptHash <$> S.decode bs
+        [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] -> PayScriptHash <$> S.decode bs
     -- Pay to Witness
         [OP_0, OP_PUSHDATA bs OPCODE]
             | B.length bs == 20 -> PayWitnessPKHash <$> S.decode bs
@@ -684,13 +660,7 @@ encodeOutput s =
           of
         (PayPK k) -> [opPushData $ S.encode k, OP_CHECKSIG]
     -- Pay to PubKey Hash Address
-        (PayPKHash h) ->
-            [ OP_DUP
-            , OP_HASH160
-            , opPushData $ S.encode h
-            , OP_EQUALVERIFY
-            , OP_CHECKSIG
-            ]
+        (PayPKHash h) -> [OP_DUP, OP_HASH160, opPushData $ S.encode h, OP_EQUALVERIFY, OP_CHECKSIG]
     -- Pay to MultiSig Keys
         (PayMulSig ps r)
             | r <= length ps ->
@@ -698,8 +668,7 @@ encodeOutput s =
                     opN = intToScriptOp $ length ps
                     keys = map (opPushData . S.encode) ps
                  in opM : keys ++ [opN, OP_CHECKMULTISIG]
-            | otherwise ->
-                error "encodeOutput: PayMulSig r must be <= than pkeys"
+            | otherwise -> error "encodeOutput: PayMulSig r must be <= than pkeys"
     -- Pay to Script Hash Address
         (PayScriptHash h) -> [OP_HASH160, opPushData $ S.encode h, OP_EQUAL]
     -- Pay to Witness PubKey Hash Address

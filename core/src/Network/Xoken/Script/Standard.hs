@@ -2,9 +2,9 @@
 
 {-|
 Module      : Network.Xoken.Script.Standard
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 

@@ -1,8 +1,8 @@
 {-|
 Module      : Network.Xoken.Test.Network
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 -}
@@ -59,9 +59,7 @@ arbitraryInv1 = Inv <$> listOf1 arbitraryInvVector
 -- | Arbitrary 'Version'.
 arbitraryVersion :: Gen Version
 arbitraryVersion =
-    Version <$> arbitrary <*> arbitrary <*> arbitrary <*>
-    arbitraryNetworkAddress <*>
-    arbitraryNetworkAddress <*>
+    Version <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitraryNetworkAddress <*> arbitraryNetworkAddress <*>
     arbitrary <*>
     arbitraryVarString <*>
     arbitrary <*>
@@ -114,31 +112,6 @@ arbitraryPing = Ping <$> arbitrary
 -- | Arbitrary 'Pong'.
 arbitraryPong :: Gen Pong
 arbitraryPong = Pong <$> arbitrary
-
--- | Arbitrary bloom filter flags.
-arbitraryBloomFlags :: Gen BloomFlags
-arbitraryBloomFlags =
-    elements [BloomUpdateNone, BloomUpdateAll, BloomUpdateP2PubKeyOnly]
-
--- | Arbitrary bloom filter with its corresponding number of elements
--- and false positive rate.
-arbitraryBloomFilter :: Gen (Int, Double, BloomFilter)
-arbitraryBloomFilter = do
-    n <- choose (0, 100000)
-    fp <- choose (1e-8, 1)
-    tweak <- arbitrary
-    fl <- arbitraryBloomFlags
-    return (n, fp, bloomCreate n fp tweak fl)
-
--- | Arbitrary 'FilterLoad'.
-arbitraryFilterLoad :: Gen FilterLoad
-arbitraryFilterLoad = do
-    (_, _, bf) <- arbitraryBloomFilter
-    return $ FilterLoad bf
-
--- | Arbitrary 'FilterAdd'.
-arbitraryFilterAdd :: Gen FilterAdd
-arbitraryFilterAdd = FilterAdd <$> arbitraryBS
 
 -- | Arbitrary 'MessageCommand'.
 arbitraryMessageCommand :: Gen MessageCommand

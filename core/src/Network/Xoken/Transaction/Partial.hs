@@ -6,8 +6,8 @@
 
 {-|
 Module      : Network.Xoken.Transaction.Partial
-Copyright   : No rights reserved
-License     : UNLICENSE
+Copyright   : Xoken Labs
+License     : Open BSV License
 Maintainer  : matt@bitnomial.com
 Stability   : experimental
 Portability : POSIX

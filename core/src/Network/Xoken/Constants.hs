@@ -3,14 +3,13 @@
 
 {-|
 Module      : Network.Xoken.Constants
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 
-Network constants for various networks, including Bitcoin SegWit (BTC), Bitcoin
-Cash (BCH), and corresponding public test and private regression test networks.
+Network constants for the Bitcoin SV networks, public, test and staling test networks.
 -}
 module Network.Xoken.Constants
     ( Network(..)
@@ -96,14 +95,6 @@ data Network =
         , getEdaBlockHeight :: !(Maybe Word32)
       -- | DAA start block height
         , getDaaBlockHeight :: !(Maybe Word32)
-      -- | segregated witness active
-        , getSegWit :: !Bool
-      -- | 'CashAddr' prefix (for Bitcoin Cash)
-        , getCashAddrPrefix :: !(Maybe Text)
-      -- | 'Bech32' prefix (for SegWit network)
-        , getBech32Prefix :: !(Maybe Text)
-      -- | Replace-By-Fee (BIP-125)
-        , getReplaceByFee :: !Bool
       -- | Subsidy halving interval
         , getHalvingInterval :: !Word32
         }
@@ -202,10 +193,6 @@ bsv =
         , getSigHashForkId = Nothing
         , getEdaBlockHeight = Just 478558
         , getDaaBlockHeight = Just 504031
-        , getSegWit = False
-        , getCashAddrPrefix = Nothing
-        , getBech32Prefix = Nothing
-        , getReplaceByFee = False
         , getHalvingInterval = 210000
         }
 
@@ -260,14 +247,10 @@ bsvTest =
         , getSigHashForkId = Nothing
         , getEdaBlockHeight = Just 1155875
         , getDaaBlockHeight = Just 1188697
-        , getSegWit = False
-        , getCashAddrPrefix = Nothing
-        , getBech32Prefix = Nothing
-        , getReplaceByFee = False
         , getHalvingInterval = 210000
         }
 
--- | RegTest for Bitcoin Cash network.
+-- | Staling test network.
 bsvSTN :: Network
 bsvSTN =
     Network
@@ -306,10 +289,6 @@ bsvSTN =
         , getSigHashForkId = Nothing
         , getEdaBlockHeight = Just 15
         , getDaaBlockHeight = Just 2200
-        , getSegWit = False
-        , getCashAddrPrefix = Nothing
-        , getBech32Prefix = Nothing
-        , getReplaceByFee = False
         , getHalvingInterval = 210000
         }
 

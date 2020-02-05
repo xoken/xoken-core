@@ -7,9 +7,9 @@
 
 {-|
 Module      : Network.Xoken.Block.Headers
-Copyright   : No rights reserved
-License     : UNLICENSE
-Maintainer  : xenog@protonmail.com
+Copyright   : Xoken Labs
+License     : Open BSV License
+
 Stability   : experimental
 Portability : POSIX
 
