@@ -38,7 +38,6 @@ library
       Network.Xoken.Script
       Network.Xoken.Test
       Network.Xoken.Transaction
-      Network.Xoken.Transaction.Partial
       Network.Xoken.Util
       Network.Xoken.Network.Common
       Network.Xoken.Network.Message
@@ -101,7 +100,7 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      
+
       Network.Xoken.AddressSpec
       Network.Xoken.BlockSpec
       Network.Xoken.Crypto.HashSpec

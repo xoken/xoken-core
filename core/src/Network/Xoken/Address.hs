@@ -22,20 +22,14 @@ module Network.Xoken.Address
     , addrToJSON
     , addrFromJSON
     , pubKeyAddr
-    , pubKeyWitnessAddr
-    , pubKeyCompatWitnessAddr
     , p2pkhAddr
-    , p2wpkhAddr
     , p2shAddr
-    , p2wshAddr
     , inputAddress
     , outputAddress
     , addressToScript
     , addressToScriptBS
     , addressToOutput
     , payToScriptAddress
-    , payToWitnessScriptAddress
-    , payToNestedScriptAddress
     , scriptToAddress
     , scriptToAddressBS
       -- * Private Key Wallet Import Format (WIF)
@@ -148,48 +142,19 @@ pubKeyAddr = PubKeyAddress . addressHash . S.encode
 p2pkhAddr :: Hash160 -> Address
 p2pkhAddr = PubKeyAddress
 
--- | Obtain a SegWit pay-to-witness-public-key-hash (P2WPKH) address from a
--- public key.
-pubKeyWitnessAddr :: PubKeyI -> Address
-pubKeyWitnessAddr = WitnessPubKeyAddress . addressHash . S.encode
-
--- | Obtain a backwards-compatible SegWit P2SH-P2WPKH address from a public key.
-pubKeyCompatWitnessAddr :: PubKeyI -> Address
-pubKeyCompatWitnessAddr = p2shAddr . addressHash . encodeOutputBS . PayWitnessPKHash . addressHash . S.encode
-
--- | Obtain a SegWit pay-to-witness-public-key-hash (P2WPKH) address from a
--- 'Hash160'.
-p2wpkhAddr :: Hash160 -> Address
-p2wpkhAddr = WitnessPubKeyAddress
-
 -- | Obtain a standard pay-to-script-hash (P2SH) address from a 'Hash160'.
 p2shAddr :: Hash160 -> Address
 p2shAddr = ScriptAddress
 
--- | Obtain a SegWit pay-to-witness-script-hash (P2WSH) address from a 'Hash256'
-p2wshAddr :: Hash256 -> Address
-p2wshAddr = WitnessScriptAddress
-
 -- | Compute a standard pay-to-script-hash (P2SH) address for an output script.
 payToScriptAddress :: ScriptOutput -> Address
 payToScriptAddress = p2shAddr . addressHash . encodeOutputBS
-
--- | Compute a SegWit pay-to-witness-script-hash (P2WSH) address for an output
--- script.
-payToWitnessScriptAddress :: ScriptOutput -> Address
-payToWitnessScriptAddress = p2wshAddr . sha256 . encodeOutputBS
-
--- | Compute a backwards-compatible SegWit P2SH-P2WSH address.
-payToNestedScriptAddress :: ScriptOutput -> Address
-payToNestedScriptAddress = p2shAddr . addressHash . encodeOutputBS . toP2WSH . encodeOutput
 
 -- | Encode an output script from an address. Will fail if using a
 -- pay-to-witness address on a non-SegWit network.
 addressToOutput :: Address -> ScriptOutput
 addressToOutput (PubKeyAddress h) = PayPKHash h
 addressToOutput (ScriptAddress h) = PayScriptHash h
-addressToOutput (WitnessPubKeyAddress h) = PayWitnessPKHash h
-addressToOutput (WitnessScriptAddress h) = PayWitnessScriptHash h
 
 -- | Get output script AST for an 'Address'.
 addressToScript :: Address -> Script
@@ -212,8 +177,6 @@ outputAddress :: ScriptOutput -> Maybe Address
 outputAddress (PayPKHash h) = Just $ PubKeyAddress h
 outputAddress (PayScriptHash h) = Just $ ScriptAddress h
 outputAddress (PayPK k) = Just $ pubKeyAddr k
-outputAddress (PayWitnessPKHash h) = Just $ WitnessPubKeyAddress h
-outputAddress (PayWitnessScriptHash h) = Just $ WitnessScriptAddress h
 outputAddress _ = Nothing
 
 -- | Infer the 'Address' of a 'ScriptInput'.

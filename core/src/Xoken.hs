@@ -21,8 +21,6 @@ module Xoken
     , module Block
       -- * Transactions
     , module Transaction
-      -- * Partially Signed Bitcoin Transactions
-    , module Partial
       -- * Scripts
     , module Script
       -- * Cryptographic Keys
@@ -41,5 +39,4 @@ import Network.Xoken.Keys as Keys
 import Network.Xoken.Network as Network
 import Network.Xoken.Script as Script
 import Network.Xoken.Transaction as Transaction
-import Network.Xoken.Transaction.Partial as Partial
 import Network.Xoken.Util as Util

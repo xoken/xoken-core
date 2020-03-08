@@ -19,9 +19,6 @@ module Network.Xoken.Transaction.Common
     , OutPoint(..)
     , TxHash(..)
     , TxShortHash(..)
-    , WitnessData
-    , WitnessStack
-    , WitnessStackItem
     , txHash
     , hexToTxHash
     , txHashToHex
@@ -98,15 +95,6 @@ type TxShortHash = String
 
 getTxShortHash :: TxHash -> TxShortHash
 getTxShortHash h = T.unpack $ T.take 4 $ encodeHex (B.reverse (S.encode h))
-
--- | Witness stack for SegWit transactions.
-type WitnessData = [WitnessStack]
-
--- | Witness stack for SegWit transactions.
-type WitnessStack = [WitnessStackItem]
-
--- | Witness stack item for SegWit transactions.
-type WitnessStackItem = ByteString
 
 -- | Data type representing a transaction.
 data Tx =

@@ -222,13 +222,6 @@ arbitraryPKOutput = PayPK . snd <$> arbitraryKeyPair
 arbitraryPKHashOutput :: Gen ScriptOutput
 arbitraryPKHashOutput = PayPKHash <$> arbitraryHash160
 
--- | Arbitrary 'PayWitnessPKHash' output.
-arbitraryWPKHashOutput :: Gen ScriptOutput
-arbitraryWPKHashOutput = PayWitnessPKHash <$> arbitraryHash160
-
--- | Arbitrary 'PayWitnessScriptHash' output.
-arbitraryWSHOutput :: Gen ScriptOutput
-arbitraryWSHOutput = PayWitnessScriptHash <$> arbitraryHash256
 
 -- | Arbitrary 'ScriptOutput' of type 'PayMS'.
 arbitraryMSOutput :: Gen ScriptOutput

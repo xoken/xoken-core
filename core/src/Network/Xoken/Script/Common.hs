@@ -21,15 +21,12 @@ module Network.Xoken.Script.Common
     , isPayPKHash
     , isPayMulSig
     , isPayScriptHash
-    , isPayWitnessPKHash
-    , isPayWitnessScriptHash
     , isDataCarrier
     , encodeOutput
     , encodeOutputBS
     , decodeOutput
     , decodeOutputBS
     , toP2SH
-    , toP2WSH
     , isPushOp
     , opPushData
     , intToScriptOp
@@ -569,14 +566,6 @@ data ScriptOutput
     | PayScriptHash
           { getOutputHash :: !Hash160
           }
-      -- | pay to witness public key hash
-    | PayWitnessPKHash
-          { getOutputHash :: !Hash160
-          }
-      -- | pay to witness script hash
-    | PayWitnessScriptHash
-          { getScriptHash :: !Hash256
-          }
       -- | provably unspendable data carrier
     | DataCarrier
           { getOutputData :: !ByteString
@@ -611,16 +600,6 @@ isPayScriptHash :: ScriptOutput -> Bool
 isPayScriptHash (PayScriptHash _) = True
 isPayScriptHash _ = False
 
--- | Is script a pay-to-witness-pub-key-hash output?
-isPayWitnessPKHash :: ScriptOutput -> Bool
-isPayWitnessPKHash (PayWitnessPKHash _) = True
-isPayWitnessPKHash _ = False
-
--- | Is script a pay-to-witness-script-hash output?
-isPayWitnessScriptHash :: ScriptOutput -> Bool
-isPayWitnessScriptHash (PayWitnessScriptHash _) = True
-isPayWitnessScriptHash _ = False
-
 -- | Is script a data carrier output?
 isDataCarrier :: ScriptOutput -> Bool
 isDataCarrier (DataCarrier _) = True
@@ -638,10 +617,6 @@ decodeOutput s =
         [OP_DUP, OP_HASH160, OP_PUSHDATA bs _, OP_EQUALVERIFY, OP_CHECKSIG] -> PayPKHash <$> S.decode bs
     -- Pay to Script Hash
         [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] -> PayScriptHash <$> S.decode bs
-    -- Pay to Witness
-        [OP_0, OP_PUSHDATA bs OPCODE]
-            | B.length bs == 20 -> PayWitnessPKHash <$> S.decode bs
-            | B.length bs == 32 -> PayWitnessScriptHash <$> S.decode bs
     -- Provably unspendable data carrier output
         [OP_RETURN, OP_PUSHDATA bs _] -> Right $ DataCarrier bs
     -- Pay to MultiSig Keys
@@ -671,9 +646,6 @@ encodeOutput s =
             | otherwise -> error "encodeOutput: PayMulSig r must be <= than pkeys"
     -- Pay to Script Hash Address
         (PayScriptHash h) -> [OP_HASH160, opPushData $ S.encode h, OP_EQUAL]
-    -- Pay to Witness PubKey Hash Address
-        (PayWitnessPKHash h) -> [OP_0, opPushData $ S.encode h]
-        (PayWitnessScriptHash h) -> [OP_0, opPushData $ S.encode h]
     -- Provably unspendable output
         (DataCarrier d) -> [OP_RETURN, opPushData d]
 
@@ -684,10 +656,6 @@ encodeOutputBS = S.encode . encodeOutput
 -- | Encode script as pay-to-script-hash script
 toP2SH :: Script -> ScriptOutput
 toP2SH = PayScriptHash . addressHash . S.encode
-
--- | Encode script as a pay-to-witness-script-hash script
-toP2WSH :: Script -> ScriptOutput
-toP2WSH = PayWitnessScriptHash . sha256 . S.encode
 
 -- | Match @[OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG]@
 matchPayMulSig :: Script -> Either String ScriptOutput
