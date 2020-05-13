@@ -67,16 +67,6 @@ data Address
           { getAddrHash160 :: !Hash160
                       -- ^ RIPEMD160 hash of script's SHA256 hash
           }
-    -- | pay to witness public key hash
-    | WitnessPubKeyAddress
-          { getAddrHash160 :: !Hash160
-                             -- ^ RIPEMD160 hash of public key's SHA256 hash
-          }
-    -- | pay to witness script hash
-    | WitnessScriptAddress
-          { getAddrHash256 :: !Hash256
-                             -- ^ HASH256 hash of script
-          }
     deriving (Eq, Ord, Generic, Show, Read, Serialize, Hashable)
 
 -- | 'Address' pays to a public key hash.

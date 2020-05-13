@@ -26,6 +26,7 @@ module Network.Xoken.Script.Common
     , encodeOutputBS
     , decodeOutput
     , decodeOutputBS
+    , decodeOutputScript
     , toP2SH
     , isPushOp
     , opPushData
@@ -626,6 +627,10 @@ decodeOutput s =
 decodeOutputBS :: ByteString -> Either String ScriptOutput
 decodeOutputBS = decodeOutput <=< S.decode
 
+decodeOutputScript :: ByteString -> Either String Script
+decodeOutputScript = S.decode
+
+--
 -- | Computes a 'Script' from a standard 'ScriptOutput'.
 encodeOutput :: ScriptOutput -> Script
 encodeOutput s =

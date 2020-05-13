@@ -28,6 +28,7 @@ module Network.Xoken.Transaction.Common
     , genesisTx
     ) where
 
+import qualified Codec.Serialise as CBOR
 import Control.Applicative ((<|>))
 import Control.Monad ((<=<), forM_, guard, liftM2, mzero, replicateM)
 import Data.Aeson as A
@@ -53,7 +54,7 @@ newtype TxHash =
     TxHash
         { getTxHash :: Hash256
         }
-    deriving (Eq, Ord, Generic, Hashable, Serialize)
+    deriving (Eq, Ord, Generic, Hashable, Serialize, CBOR.Serialise)
 
 instance Show TxHash where
     showsPrec _ = shows . txHashToHex
@@ -105,18 +106,15 @@ data Tx =
         , txIn :: ![TxIn]
       -- | list of transaction outputs
         , txOut :: ![TxOut]
-      -- | witness data for the transaction
-    --    , txWitness :: !WitnessData
       -- | earliest mining height or time
         , txLockTime :: !Word32
         }
-    deriving (Show, Read, Eq, Ord, Generic, Hashable)
+    deriving (Show, Read, Eq, Ord, Generic, Hashable, CBOR.Serialise)
 
 -- | Compute transaction hash.
 txHash :: Tx -> TxHash
 txHash tx = TxHash (doubleSHA256 (S.encode tx))
 
--- txHash tx = TxHash (doubleSHA256 (S.encode tx {txWitness = []}))
 instance IsString Tx where
     fromString = fromMaybe e . (eitherToMaybe . S.decode <=< decodeHex) . cs
       where
@@ -125,8 +123,6 @@ instance IsString Tx where
 instance Serialize Tx where
     get = parseLegacyTx
     put tx = putLegacyTx tx
-        -- | null (txWitness tx) = putLegacyTx tx
-        -- | otherwise = putWitnessTx tx
 
 putInOut :: Tx -> Put
 putInOut tx = do
@@ -135,7 +131,6 @@ putInOut tx = do
     putVarInt $ length (txOut tx)
     forM_ (txOut tx) put
 
--- | Non-SegWit transaction serializer.
 putLegacyTx :: Tx -> Put
 putLegacyTx tx = do
     putWord32le (txVersion tx)
@@ -168,7 +163,7 @@ data TxIn =
            -- | lock-time using sequence numbers (BIP-68)
         , txInSequence :: !Word32
         }
-    deriving (Eq, Show, Read, Ord, Generic, Hashable)
+    deriving (Eq, Show, Read, Ord, Generic, Hashable, CBOR.Serialise)
 
 instance Serialize TxIn where
     get = TxIn <$> S.get <*> (readBS =<< S.get) <*> getWord32le
@@ -188,7 +183,7 @@ data TxOut =
             -- | pubkey script
         , scriptOutput :: !ByteString
         }
-    deriving (Eq, Show, Read, Ord, Generic, Hashable)
+    deriving (Eq, Show, Read, Ord, Generic, Hashable, CBOR.Serialise)
 
 instance Serialize TxOut where
     get = do
@@ -215,7 +210,7 @@ data OutPoint =
       -- | position of output in previous transaction
         , outPointIndex :: !Word32
         }
-    deriving (Show, Read, Eq, Ord, Generic, Hashable)
+    deriving (Show, Read, Eq, Ord, Generic, Hashable, CBOR.Serialise)
 
 instance FromJSON OutPoint where
     parseJSON = withText "OutPoint" $ maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex)
