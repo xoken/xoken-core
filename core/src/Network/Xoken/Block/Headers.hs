@@ -410,7 +410,7 @@ validateWithCheckPoint net height headers =
         else True) <$> (getCheckpoints net)
   where
     endHeight = height + fromIntegral (length headers)
-    condition bht = height < 556767 && height <= bht && bht <= endHeight
+    condition bht = height < (fst $ last $ getCheckpoints net) && height < bht && bht <= endHeight
 
 -- | This block should be at least version 2 (BIP34). Block height must be
 -- included in the coinbase transaction to prevent non-unique transaction
