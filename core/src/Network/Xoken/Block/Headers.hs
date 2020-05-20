@@ -43,6 +43,7 @@ module Network.Xoken.Block.Headers
     , validBlock
     , validCP
     , afterLastCP
+    , validateWithCheckPoint
     , bip34
     , validVersion
     , lastNoMinDiff
@@ -74,7 +75,7 @@ import Data.Function (on)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Hashable
-import Data.List (sort, sortBy)
+import Data.List (sort, sortBy, (!!))
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Serialize as S (Serialize(..), decode, encode, get, put)
 import Data.Serialize.Get as S
@@ -394,6 +395,22 @@ afterLastCP net bestHeight newChildHeight =
         Nothing -> True
   where
     lM = listToMaybe . reverse $ [c | (c, _) <- getCheckpoints net, c <= bestHeight]
+
+-- | Validate the blocks by comparing the hash with matched checkpoint.
+-- Used to prevent storing the blocks from other networks (bitcoin cash) or invalid blocks.
+validateWithCheckPoint ::
+       Network
+    -> BlockHeight -- ^ current height
+    -> [BlockHash] -- ^ list of new block hashes
+    -> Bool
+validateWithCheckPoint net height headers =
+    and $ (\(bht, bhs) ->
+      if condition bht
+        then bhs == headers !! (fromIntegral $ bht - height - 1)
+        else True) <$> (getCheckpoints net)
+  where
+    endHeight = height + fromIntegral (length headers)
+    condition bht = height < (fst $ last $ getCheckpoints net) && height < bht && bht <= endHeight
 
 -- | This block should be at least version 2 (BIP34). Block height must be
 -- included in the coinbase transaction to prevent non-unique transaction

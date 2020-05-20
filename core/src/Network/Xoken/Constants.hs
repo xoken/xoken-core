@@ -180,6 +180,9 @@ bsv =
               , (504031, "0000000000000000011ebf65b60d0a3de80b8175be709d653b4c1a1beeb6ab9c")
                 -- Monolith activation.
               , (530359, "0000000000000000011ada8bd08f46074f44a8f155396f43e38acf9501c49103")
+              -- BSV-BCH fork block (556766),
+              -- 556766 + 1 belongs to BSV (To differentiate between BSV and BCH).
+              , (556767, "000000000000000001d956714215d96ffc00e0afda4cd0a96c96f8d802b1662b")
               ]
         , getSeeds =
               [ "bitcoinsv.io"
