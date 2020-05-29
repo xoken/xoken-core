@@ -150,9 +150,7 @@ data BlockHeader =
                   -- | random nonce
         , bhNonce :: !Word32 --  4 bytes
         }
-    deriving (Eq, Ord, Show, Read, Generic, Hashable, CBOR.Serialise) -- 80 bytes
-
-instance ToJSON BlockHeader
+    deriving (Eq, Ord, Show, Read, Generic, Hashable, CBOR.Serialise, FromJSON, ToJSON) -- 80 bytes
 
 -- | Compute hash of 'BlockHeader'.
 headerHash :: BlockHeader -> BlockHash

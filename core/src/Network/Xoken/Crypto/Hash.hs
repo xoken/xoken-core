@@ -79,6 +79,9 @@ newtype Hash256 =
 instance ToJSON Hash256 where
     toJSON a = Data.Aeson.String $ encodeHex $ BSS.fromShort $ getHash256 a
 
+instance FromJSON Hash256 where
+    parseJSON = withText "Hash256" (\x -> maybe (fail "Decode Hex failed") return $ Hash256 . BSS.toShort <$> decodeHex x)
+
 -- instance ToJSON ByteString where
 --     toJSON a = Data.Aeson.String $ T.pack (C.unpack a)
 -- | Type for 160-bit hashes.
