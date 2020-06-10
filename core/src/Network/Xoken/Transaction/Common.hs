@@ -150,7 +150,8 @@ parseLegacyTx = do
 instance FromJSON Tx where
     parseJSON = withText "Tx" $ maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex)
 
-instance ToJSON Tx
+instance ToJSON Tx where
+    toJSON (Tx v i o l) = object ["version" .= v, "ins" .= i, "outs" .= o, "locktime" .= l]
     -- toJSON = A.String . encodeHex . S.encode
 
 -- | Data type representing a transaction input.
@@ -195,12 +196,14 @@ instance Serialize TxOut where
         putVarInt $ B.length s
         putByteString s
 
-instance ToJSON TxOut
+instance ToJSON TxOut where
+    toJSON (TxOut v s) = object ["value" .= v, "script" .= s]
 
-instance ToJSON TxIn
+instance ToJSON TxIn where
+    toJSON (TxIn op scr seq) = object ["outpoint" .= op, "script" .= scr, "sequence" .= seq]
 
 instance ToJSON ByteString where
-    toJSON a = A.String $ encodeHex a -- T.pack (C.unpack a)
+    toJSON a = A.String $ encodeHex a
 
 -- | The 'OutPoint' refers to a transaction output being spent.
 data OutPoint =
@@ -215,8 +218,8 @@ data OutPoint =
 instance FromJSON OutPoint where
     parseJSON = withText "OutPoint" $ maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex)
 
-instance ToJSON OutPoint
-    -- toJSON = A.String . encodeHex . S.encode
+instance ToJSON OutPoint where
+    toJSON (OutPoint h i) = object ["hash" .= h, "index" .= i]
 
 instance Serialize OutPoint where
     get = do
