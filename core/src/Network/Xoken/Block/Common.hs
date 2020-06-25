@@ -49,6 +49,7 @@ import Network.Xoken.Crypto.Hash
 import Network.Xoken.Network.Common
 import Network.Xoken.Transaction.Common
 import Network.Xoken.Util
+import Numeric (showHex)
 import qualified Text.Read as R
 
 -- | Height of a block in the block chain, starting at 0 for Genesis.
@@ -316,3 +317,32 @@ encodeCompact i = nCompact
         | otherwise = nCompact'
     low64 :: Integer
     low64 = 0xffffffffffffffff
+
+-- | targetMax is the maximum value a hash can be    
+targetMax :: Integer
+targetMax = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+
+-- | targetGenesis is the target value of the genesis block
+targetGenesis :: Integer
+targetGenesis = 0x00000000ffff0000000000000000000000000000000000000000000000000000
+
+-- | convertBitsToTarget converts block bits to target
+convertBitsToTarget :: Word32 -> Integer
+convertBitsToTarget b = read $ "0x" ++ (drop 2 hexBits) ++ replicate ((read $ "0x" ++ take 2 hexBits)*2 - 6) '0'
+    where hexBits = showHex b ""
+
+-- | getBlockWork finds the average number of hashes required in mining a block from a target
+getBlockWork :: Integer -> Integer
+getBlockWork = div targetMax
+
+-- | getDifficulty finds the difficulty from a target
+getDifficulty :: Integer -> Double
+getDifficulty t = (fromIntegral targetGenesis)/(fromIntegral t)
+
+-- | convertBitsToBlockWork finds the average number of hashes required in mining a block from the block bits
+convertBitsToBlockWork :: Word32 -> Integer
+convertBitsToBlockWork = getBlockWork . convertBitsToTarget
+
+-- | convertBitsToDifficulty finds the difficulty of a block from the block bits
+convertBitsToDifficulty :: Word32 -> Double
+convertBitsToDifficulty = getDifficulty . convertBitsToTarget
