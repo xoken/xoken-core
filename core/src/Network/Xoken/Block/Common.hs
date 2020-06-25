@@ -27,6 +27,8 @@ module Network.Xoken.Block.Common
     , Headers(..)
     , decodeCompact
     , encodeCompact
+    , convertBitsToBlockWork
+    , convertBitsToDifficulty
     ) where
 
 import qualified Codec.Serialise as CBOR
