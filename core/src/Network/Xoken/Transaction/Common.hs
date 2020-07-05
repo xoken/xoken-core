@@ -38,6 +38,7 @@ import qualified Data.ByteString.Char8 as C
 import Data.Char
 import Data.Hashable (Hashable)
 import Data.List (foldl')
+import Data.List as L
 import Data.Maybe (fromMaybe, maybe)
 import Data.Serialize as S
 import Data.String (IsString, fromString)
@@ -98,7 +99,8 @@ hexToTxHash hex = do
 type TxShortHash = Int
 
 getTxShortHash :: TxHash -> Int -> TxShortHash
-getTxShortHash h numbits = toDec $ take numbits $ showIntAtBase 2 intToDigit (fst $ head $ N.readHex $ show h) ""
+getTxShortHash h numbits =
+    toDec $ take numbits $ showIntAtBase 2 intToDigit (fst $ head $ N.readHex $ T.unpack $ txHashToHex h) ""
 
 toDec :: String -> Int
 toDec = foldl' (\acc x -> acc * 2 + digitToInt x) 0
