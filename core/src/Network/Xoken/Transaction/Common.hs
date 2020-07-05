@@ -35,7 +35,9 @@ import Data.Aeson as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
+import Data.Char
 import Data.Hashable (Hashable)
+import Data.List (foldl')
 import Data.Maybe (fromMaybe, maybe)
 import Data.Serialize as S
 import Data.String (IsString, fromString)
@@ -47,6 +49,7 @@ import Network.Xoken.Crypto.Hash
 import Network.Xoken.Network.Common
 import Network.Xoken.Script.Common
 import Network.Xoken.Util
+import Numeric as N
 import Text.Read as R
 
 -- | Transaction id: hash of transaction excluding witness data.
@@ -92,10 +95,13 @@ hexToTxHash hex = do
     h <- either (const Nothing) Just (S.decode bs)
     return $ TxHash h
 
-type TxShortHash = String
+type TxShortHash = Int
 
-getTxShortHash :: TxHash -> TxShortHash
-getTxShortHash h = T.unpack $ T.take 4 $ encodeHex (B.reverse (S.encode h))
+getTxShortHash :: TxHash -> Int -> TxShortHash
+getTxShortHash h numbits = toDec $ take numbits $ showIntAtBase 2 intToDigit (fst $ head $ N.readHex $ show h) ""
+
+toDec :: String -> Int
+toDec = foldl' (\acc x -> acc * 2 + digitToInt x) 0
 
 -- | Data type representing a transaction.
 data Tx =
