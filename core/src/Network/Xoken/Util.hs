@@ -29,7 +29,7 @@ module Network.Xoken.Util
       -- * Triples
     , fst3
     , snd3
-    , lst3
+    , thd3
       -- * JSON Utilities
     , dropFieldLabel
     , dropSumLabels
@@ -143,8 +143,8 @@ snd3 :: (a, b, c) -> b
 snd3 (_, b, _) = b
 
 -- | Returns the last value of a triple.
-lst3 :: (a, b, c) -> c
-lst3 (_, _, c) = c
+thd3 :: (a, b, c) -> c
+thd3 (_, _, c) = c
 
 -- | Field label goes lowercase and first @n@ characters get removed.
 dropFieldLabel :: Int -> Options

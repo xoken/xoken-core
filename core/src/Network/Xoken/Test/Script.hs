@@ -195,7 +195,7 @@ arbitraryTxSignature net = do
 
 -- | Arbitrary transaction signature that could also be empty.
 arbitraryTxSignatureEmpty :: Network -> Gen TxSignature
-arbitraryTxSignatureEmpty net = frequency [(1, return TxSignatureEmpty), (10, lst3 <$> arbitraryTxSignature net)]
+arbitraryTxSignatureEmpty net = frequency [(1, return TxSignatureEmpty), (10, thd3 <$> arbitraryTxSignature net)]
 
 -- | Arbitrary m of n parameters.
 arbitraryMSParam :: Gen (Int, Int)
@@ -269,14 +269,14 @@ arbitraryPKHashInput net = do
 -- | Like 'arbitraryPKHashInput' without empty signatures.
 arbitraryPKHashInputFull :: Network -> Gen ScriptInput
 arbitraryPKHashInputFull net = do
-    sig <- lst3 <$> arbitraryTxSignature net
+    sig <- thd3 <$> arbitraryTxSignature net
     key <- snd <$> arbitraryKeyPair
     return $ RegularInput $ SpendPKHash sig key
 
 -- | Like above but only compressed.
 arbitraryPKHashInputFullC :: Network -> Gen ScriptInput
 arbitraryPKHashInputFullC net = do
-    sig <- lst3 <$> arbitraryTxSignature net
+    sig <- thd3 <$> arbitraryTxSignature net
     key <- fmap snd $ arbitraryKeyPair `suchThat` (pubKeyCompressed . snd)
     return $ RegularInput $ SpendPKHash sig key
 
@@ -318,7 +318,7 @@ arbitraryMulSigSHInputFull :: Network -> Gen ScriptInput
 arbitraryMulSigSHInputFull net =
     arbitraryMSOutput >>= \case
         rdm@(PayMulSig _ m) -> do
-            sigs <- map lst3 <$> vectorOf m (arbitraryTxSignature net)
+            sigs <- map thd3 <$> vectorOf m (arbitraryTxSignature net)
             return $ ScriptHashInput (SpendMulSig sigs) rdm
         _ -> undefined
 
@@ -327,6 +327,6 @@ arbitraryMulSigSHInputFullC :: Network -> Gen ScriptInput
 arbitraryMulSigSHInputFullC net =
     arbitraryMSOutputC >>= \case
         rdm@(PayMulSig _ m) -> do
-            sigs <- map lst3 <$> vectorOf m (arbitraryTxSignature net)
+            sigs <- map thd3 <$> vectorOf m (arbitraryTxSignature net)
             return $ ScriptHashInput (SpendMulSig sigs) rdm
         _ -> undefined
