@@ -45,6 +45,7 @@ import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
 import qualified Data.Text as T
 import Data.Word (Word32, Word64)
+import Data.Word
 import GHC.Generics
 import Network.Xoken.Crypto.Hash
 import Network.Xoken.Network.Common
@@ -96,11 +97,13 @@ hexToTxHash hex = do
     h <- either (const Nothing) Just (S.decode bs)
     return $ TxHash h
 
-type TxShortHash = Int
+type TxShortHash = Word32
 
-getTxShortHash :: TxHash -> Int -> TxShortHash
+getTxShortHash :: TxHash -> Word8 -> TxShortHash
 getTxShortHash h numbits =
-    toDec $ take numbits $ showIntAtBase 2 intToDigit (fst $ head $ N.readHex $ T.unpack $ txHashToHex h) ""
+    fromIntegral $
+    toDec $
+    take (fromIntegral numbits) $ showIntAtBase 2 intToDigit (fst $ head $ N.readHex $ T.unpack $ txHashToHex h) ""
 
 toDec :: String -> Int
 toDec = foldl' (\acc x -> acc * 2 + digitToInt x) 0
