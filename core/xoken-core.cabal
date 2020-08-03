@@ -52,6 +52,9 @@ library
       Network.Xoken.Keys.Extended
       Network.Xoken.Keys.Mnemonic
       Network.Xoken.Script.Common
+      Network.Xoken.Script.Interpreter
+      Network.Xoken.Script.Interpreter.Internal
+      Network.Xoken.Script.Interpreter.Operations
       Network.Xoken.Script.SigHash
       Network.Xoken.Test.Address
       Network.Xoken.Test.Block
