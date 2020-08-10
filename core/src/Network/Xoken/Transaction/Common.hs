@@ -97,16 +97,10 @@ hexToTxHash hex = do
     h <- either (const Nothing) Just (S.decode bs)
     return $ TxHash h
 
-type TxShortHash = Word32
+type TxShortHash = ByteString
 
 getTxShortHash :: TxHash -> Word8 -> TxShortHash
-getTxShortHash h numbits =
-    fromIntegral $
-    toDec $
-    take (fromIntegral numbits) $ showIntAtBase 2 intToDigit (fst $ head $ N.readHex $ T.unpack $ txHashToHex h) ""
-
-toDec :: String -> Int
-toDec = foldl' (\acc x -> acc * 2 + digitToInt x) 0
+getTxShortHash (TxHash h) numbits = B.take (fromIntegral numbits) (S.encode h)
 
 -- | Data type representing a transaction.
 data Tx =
