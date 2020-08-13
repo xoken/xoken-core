@@ -234,7 +234,7 @@ bsvTest =
         , getCheckpoints =
               [ (546, "000000002a936ca763904c3c35fce2f3556c559c0214345d31b1bcebf76acb70")
             -- UAHF fork block.
-              , (1155875, "00000000000e38fef93ed9582a7df43815d5c2ba9fd37ef70c9a0ea4a285b8f5")
+              , (1155876, "00000000000e38fef93ed9582a7df43815d5c2ba9fd37ef70c9a0ea4a285b8f5")
             -- Nov, 13. DAA activation block.
               , (1188697, "0000000000170ed0918077bde7b4d36cc4c91be69fa09211f748240dabe047fb")
               ]
