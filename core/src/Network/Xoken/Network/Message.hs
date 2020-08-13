@@ -17,11 +17,14 @@ module Network.Xoken.Network.Message
     , getMessage
     , getDeflatedBlock
     , getConfirmedTx
+    , getConfirmedTxBatch
     ) where
 
+import Control.Applicative
 import Control.Monad (unless)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import Data.Maybe
 import Data.Serialize (Serialize, encode, get, put)
 import Data.Serialize.Get (Get, getByteString, getWord32be, getWord32le, isolate, lookAhead, lookAheadM)
 import Data.Serialize.Put (Putter, putByteString, putWord32be, putWord32le)
@@ -72,7 +75,7 @@ data Message
     | MGetBlocks !GetBlocks
     | MGetHeaders !GetHeaders
     | MTx !Tx
-    | MConfTx !Tx
+    | MConfTx ![Tx]
     | MBlock !DefBlock
     | MMerkleBlock !MerkleBlock
     | MHeaders !Headers
@@ -115,6 +118,9 @@ getDeflatedBlock = lookAheadM $ Just <$> get
 
 getConfirmedTx :: Get (Maybe Tx)
 getConfirmedTx = lookAheadM $ Just <$> get
+
+getConfirmedTxBatch :: Get ([Tx])
+getConfirmedTxBatch = fmap catMaybes $ some getConfirmedTx
 
 -- | Deserializer for network messages.
 getMessage :: Network -> Get Message
