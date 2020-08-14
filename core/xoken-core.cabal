@@ -34,6 +34,7 @@ library
       Network.Xoken.Constants
       Network.Xoken.Crypto
       Network.Xoken.Keys
+      Network.Xoken.Keys.Extended
       Network.Xoken.Network
       Network.Xoken.Script
       Network.Xoken.Test
