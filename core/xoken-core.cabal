@@ -50,7 +50,6 @@ library
   other-modules:
       Network.Xoken.Crypto.Signature
       Network.Xoken.Keys.Common
-      Network.Xoken.Keys.Extended
       Network.Xoken.Keys.Mnemonic
       Network.Xoken.Script.Common
       Network.Xoken.Script.SigHash
