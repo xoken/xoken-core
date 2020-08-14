@@ -35,6 +35,7 @@ import Data.Aeson as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
+import qualified Data.ByteString.Short as BSS
 import Data.Char
 import Data.Hashable (Hashable)
 import Data.List (foldl')
@@ -97,10 +98,10 @@ hexToTxHash hex = do
     h <- either (const Nothing) Just (S.decode bs)
     return $ TxHash h
 
-type TxShortHash = ByteString
+type TxShortHash = BSS.ShortByteString
 
 getTxShortHash :: TxHash -> Word8 -> TxShortHash
-getTxShortHash (TxHash h) numbits = B.take (fromIntegral numbits) (S.encode h)
+getTxShortHash (TxHash h) numbits = BSS.toShort $ B.take (fromIntegral numbits) (S.encode h)
 
 -- | Data type representing a transaction.
 data Tx =
