@@ -295,6 +295,47 @@ bsvSTN =
         , getHalvingInterval = 210000
         }
 
+bsvRegTest :: Network
+bsvRegTest =
+    Network
+        { getNetworkName = "regtest"
+        , getNetworkIdent = "regTest"
+        , getAddrPrefix = 111
+        , getScriptPrefix = 196
+        , getSecretPrefix = 239
+        , getExtPubKeyPrefix = 0x043587cf
+        , getExtSecretPrefix = 0x04358394
+        , getNetworkMagic = 0xdab5bffa
+        , getGenesisHeader =
+              BlockHeader
+                  0x01
+                  "0000000000000000000000000000000000000000000000000000000000000000"
+                  "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
+                  1296688602
+                  0x207fffff
+                  2
+            -- Hash 0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206
+        , getMaxBlockSize = 32000000
+        , getMaxSatoshi = 2100000000000000
+        , getXokenUserAgent = "Xoken BSV-RegTestnet, " <> versionString
+        , getDefaultPort = 18444
+        , getAllowMinDifficultyBlocks = True
+        , getPowNoRetargetting = True
+        , getPowLimit = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        , getBip34Block = (100000000, "0000000000000000000000000000000000000000000000000000000000000000")
+        , getBip65Height = 1351
+        , getBip66Height = 1251
+        , getTargetTimespan = 14 * 24 * 60 * 60
+        , getTargetSpacing = 10 * 60
+        , getCheckpoints = []
+        , getSeeds = ["127.0.0.1"]
+        , getBip44Coin = 0 --
+        , getSigHashForkId = Nothing --
+        , getEdaBlockHeight = Just 0
+        , getDaaBlockHeight = Just 0
+        , getHalvingInterval = 150
+        }
+
 -- | List of all networks supported by this library.
 allNets :: [Network]
-allNets = [bsv, bsvTest, bsvSTN]
+allNets = [bsv, bsvTest, bsvSTN, bsvRegTest]
