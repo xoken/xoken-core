@@ -52,6 +52,7 @@ import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
 import Data.Text as T
 import Data.Word (Word32)
+import GHC.Generics
 import Network.Xoken.Util
 import Text.Read as R
 
@@ -67,14 +68,14 @@ newtype Hash512 =
     Hash512
         { getHash512 :: ShortByteString
         }
-    deriving (Eq, Ord, Hashable)
+    deriving (Eq, Ord, Hashable, Generic)
 
 -- | Type for 256-bit hashes.
 newtype Hash256 =
     Hash256
         { getHash256 :: ShortByteString
         }
-    deriving (Eq, Ord, Hashable, CBOR.Serialise)
+    deriving (Eq, Ord, Hashable, CBOR.Serialise, Generic)
 
 instance ToJSON Hash256 where
     toJSON a = Data.Aeson.String $ encodeHex $ BSS.fromShort $ getHash256 a
@@ -89,7 +90,7 @@ newtype Hash160 =
     Hash160
         { getHash160 :: ShortByteString
         }
-    deriving (Eq, Ord, Hashable)
+    deriving (Eq, Ord, Hashable, Generic)
 
 instance Show Hash512 where
     showsPrec _ = shows . encodeHex . BSS.fromShort . getHash512
