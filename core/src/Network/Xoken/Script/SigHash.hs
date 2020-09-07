@@ -24,9 +24,7 @@ module Network.Xoken.Script.SigHash
     , isSigHashNone
     , isSigHashSingle
     , isSigHashUnknown
-    , sigHashAddForkId
     , sigHashGetForkId
-    , sigHashAddNetworkId
     , txSigHash
     , txSigHashForkId
     , TxSignature(..)
@@ -138,14 +136,6 @@ isSigHashSingle = (== sigHashSingle) . (.&. 0x1f)
 isSigHashUnknown :: SigHash -> Bool
 isSigHashUnknown = (`notElem` [sigHashAll, sigHashNone, sigHashSingle]) . (.&. 0x1f)
 
--- | Add a fork id to a 'SigHash'.
-sigHashAddForkId :: SigHash -> Word32 -> SigHash
-sigHashAddForkId sh w = (fromIntegral w `shiftL` 8) .|. (sh .&. 0x000000ff)
-
--- | Add fork id of a particular network to a 'SigHash'.
-sigHashAddNetworkId :: Network -> SigHash -> SigHash
-sigHashAddNetworkId net = (`sigHashAddForkId` fromMaybe 0 (getSigHashForkId net))
-
 -- | Get fork id from 'SigHash'.
 sigHashGetForkId :: SigHash -> Word32
 sigHashGetForkId = fromIntegral . (`shiftR` 8)
@@ -160,7 +150,7 @@ txSigHash ::
     -> SigHash -- ^ what to sign
     -> Hash256 -- ^ hash to be signed
 txSigHash net tx out v i sh
-    | hasForkIdFlag sh && isJust (getSigHashForkId net) = txSigHashForkId net tx out v i sh
+    | hasForkIdFlag sh = txSigHashForkId net tx out v i sh
     | otherwise = do
         let newIn = buildInputs (txIn tx) fout i sh
         -- When SigSingle and input index > outputs, then sign integer 1
@@ -220,11 +210,12 @@ txSigHashForkId net tx out v i sh =
         putWord32le $ txInSequence $ txIn tx !! i
         put hashOutputs
         putWord32le $ txLockTime tx
-        putWord32le $ fromIntegral $ sigHashAddNetworkId net sh
+        putWord32le $ fromIntegral $ sh
   where
-    hashPrevouts
-        | otherwise = zeros
+    hashPrevouts = doubleSHA256 $ runPut $ mapM_ (put . prevOutput) $ txIn tx
     hashSequence
+        | not (isSigHashSingle sh) && not (isSigHashNone sh) =
+            doubleSHA256 $ runPut $ mapM_ (putWord32le . txInSequence) $ txIn tx
         | otherwise = zeros
     hashOutputs
         | not (isSigHashSingle sh) && not (isSigHashNone sh) = doubleSHA256 $ runPut $ mapM_ put $ txOut tx
@@ -264,3 +255,10 @@ decodeTxSig net bs =
                 Left "Non-canonical signature: invalid network for forkId"
             return $ TxSignature sig sh
         Nothing -> Left "Non-canonical signature: could not parse signature"
+
+-- | Add a fork id to a 'SigHash'.
+-- sigHashAddForkId :: SigHash -> Word32 -> SigHash
+-- sigHashAddForkId sh w = (fromIntegral w `shiftL` 8) .|. (sh .&. 0x000000ff)
+-- | Add fork id of a particular network to a 'SigHash'.
+-- sigHashAddNetworkId :: Network -> SigHash -> SigHash
+-- sigHashAddNetworkId net = (`sigHashAddForkId` fromMaybe 0 (getSigHashForkId net))
