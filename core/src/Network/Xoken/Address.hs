@@ -99,7 +99,6 @@ base58put net (PubKeyAddress h) = do
 base58put net (ScriptAddress h) = do
     putWord8 (getScriptPrefix net)
     put h
-base58put _ _ = error "Cannot serialize this address as Base58"
 
 addrToJSON :: Network -> Address -> Value
 addrToJSON net a = toJSON (addrToString net a)
