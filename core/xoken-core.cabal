@@ -113,6 +113,7 @@ test-suite spec
       Network.Xoken.KeysSpec
       Network.Xoken.NetworkSpec
       Network.Xoken.ScriptSpec
+      Network.Xoken.ScriptInterpreterSpec
       Network.Xoken.TransactionSpec
       Network.Xoken.UtilSpec
       Network.Xoken.Address
@@ -151,8 +152,6 @@ test-suite spec
       Network.Xoken.Transaction.Common
       Network.Xoken.Util
       Network.Xoken.Script.Interpreter
-
-
       Paths_xoken_core
   hs-source-dirs:
       test, src
