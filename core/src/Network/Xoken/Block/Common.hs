@@ -15,6 +15,7 @@ module Network.Xoken.Block.Common
     ( DefBlock(..)
     , BlockHeight
     , Timestamp
+    , Block(..)
     , BlockHeader(..)
     , headerHash
     , BlockLocator
@@ -60,23 +61,25 @@ type BlockHeight = Word32
 -- | Block timestamp as Unix time (seconds since 1970-01-01 00:00 UTC).
 type Timestamp = Word32
 
--- -- | Block header and transactions.
--- data Block =
---     Block
---         { blockHeader :: !BlockHeader
---         , blockTxns :: ![Tx]
---         }
---     deriving (Eq, Show, Read, Generic, Hashable)
--- instance Serialize Block where
---     get = do
---         header <- get
---         (VarInt c) <- get
---         txs <- replicateM (fromIntegral c) get
---         return $ Block header txs
---     put (Block h txs) = do
---         put h
---         putVarInt $ length txs
---         forM_ txs put
+-- | Block header and transactions.
+data Block =
+    Block
+        { blockHeader :: !BlockHeader
+        , blockTxns :: ![Tx]
+        }
+    deriving (Eq, Show, Read, Generic, Hashable)
+
+instance Serialize Block where
+    get = do
+        header <- get
+        (VarInt c) <- get
+        txs <- replicateM (fromIntegral c) get
+        return $ Block header txs
+    put (Block h txs) = do
+        put h
+        putVarInt $ length txs
+        forM_ txs put
+
 -- | Block header and transactions.
 data DefBlock =
     DefBlock
@@ -330,8 +333,9 @@ targetGenesis = 0x00000000ffff00000000000000000000000000000000000000000000000000
 
 -- | convertBitsToTarget converts block bits to target
 convertBitsToTarget :: Word32 -> Integer
-convertBitsToTarget b = read $ "0x" ++ (drop 2 hexBits) ++ replicate ((read $ "0x" ++ take 2 hexBits)*2 - 6) '0'
-    where hexBits = showHex b ""
+convertBitsToTarget b = read $ "0x" ++ (drop 2 hexBits) ++ replicate ((read $ "0x" ++ take 2 hexBits) * 2 - 6) '0'
+  where
+    hexBits = showHex b ""
 
 -- | getBlockWork finds the average number of hashes required in mining a block from a target
 getBlockWork :: Integer -> Integer
@@ -339,7 +343,7 @@ getBlockWork = div targetMax
 
 -- | getDifficulty finds the difficulty from a target
 getDifficulty :: Integer -> Double
-getDifficulty t = (fromIntegral targetGenesis)/(fromIntegral t)
+getDifficulty t = (fromIntegral targetGenesis) / (fromIntegral t)
 
 -- | convertBitsToBlockWork finds the average number of hashes required in mining a block from the block bits
 convertBitsToBlockWork :: Word32 -> Integer

@@ -8,6 +8,7 @@ Portability : POSIX
 -}
 module Network.Xoken.Test.Block where
 
+import Network.Xoken.Block as Block
 import Network.Xoken.Block.Common
 import Network.Xoken.Block.Merkle
 import Network.Xoken.Constants
@@ -17,12 +18,13 @@ import Network.Xoken.Test.Transaction
 import Test.QuickCheck
 
 -- | Block full or arbitrary transactions.
--- arbitraryBlock :: Network -> Gen Block
--- arbitraryBlock net = do
---     h <- arbitraryBlockHeader
---     c <- choose (0, 10)
---     txs <- vectorOf c (arbitraryTx net)
---     return $ Block h txs
+arbitraryBlock :: Network -> Gen Block
+arbitraryBlock net = do
+    h <- arbitraryBlockHeader
+    c <- choose (0, 10)
+    txs <- vectorOf c (arbitraryTx net)
+    return $ Block h txs
+
 -- | Block header with random hash.
 arbitraryBlockHeader :: Gen BlockHeader
 arbitraryBlockHeader =

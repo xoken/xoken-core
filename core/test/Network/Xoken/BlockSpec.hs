@@ -1,26 +1,27 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Network.Xoken.BlockSpec
     ( spec
     ) where
 
-import           Control.Monad.State.Strict
-import           Data.Aeson                    as A
-import           Data.Either                   (fromRight)
-import           Data.Map.Strict               (singleton)
-import           Data.Maybe                    (fromJust)
-import           Data.Serialize                as S
-import           Data.String                   (fromString)
-import           Data.String.Conversions       (cs)
-import           Data.Text                     (Text)
-import           Network.Xoken.Block
-import           Network.Xoken.Block.Headers
-import           Network.Xoken.Block.Merkle
-import           Network.Xoken.Constants
-import           Network.Xoken.Test
-import           Network.Xoken.Transaction
-import           Test.Hspec
-import           Test.HUnit                    hiding (State)
-import           Test.QuickCheck
+import Control.Monad.State.Strict
+import Data.Aeson as A
+import Data.Either (fromRight)
+import Data.Map.Strict (singleton)
+import Data.Maybe (fromJust)
+import Data.Serialize as S
+import Data.String (fromString)
+import Data.String.Conversions (cs)
+import Data.Text (Text)
+import Network.Xoken.Block
+import Network.Xoken.Block.Headers
+import Network.Xoken.Block.Merkle
+import Network.Xoken.Constants
+import Network.Xoken.Test
+import Network.Xoken.Transaction
+import Test.HUnit hiding (State)
+import Test.Hspec
+import Test.QuickCheck
 
 myTime :: Timestamp
 myTime = 1499083075
@@ -37,7 +38,7 @@ chain net bh i = do
 
 spec :: Spec
 spec = do
-    let net = bchRegTest
+    let net = bsvRegTest
     describe "blockchain headers" $ do
         it "gets best block" $
             let bb =
@@ -57,47 +58,32 @@ spec = do
             let bb = withChain net $ splitChain net >> getBestBlockHeader
              in nodeHeight bb `shouldBe` 4035
     describe "block hash" $ do
-        it "encodes and decodes block hash" $
-            property $
-            forAll arbitraryBlockHash $ \h ->
-                hexToBlockHash (blockHashToHex h) == Just h
-        it "from string block hash" $
-            property $
-            forAll arbitraryBlockHash $ \h ->
-                fromString (cs $ blockHashToHex h) == h
-        it "show and read block hash" $
-            property $ forAll arbitraryBlockHash $ \h -> read (show h) == h
+        it "encodes and decodes block hash" $ property $ forAll arbitraryBlockHash $ \h ->
+            hexToBlockHash (blockHashToHex h) == Just h
+        it "from string block hash" $ property $ forAll arbitraryBlockHash $ \h ->
+            fromString (cs $ blockHashToHex h) == h
+        it "show and read block hash" $ property $ forAll arbitraryBlockHash $ \h -> read (show h) == h
         it "json block hash" $ property $ forAll arbitraryBlockHash testID
     describe "merkle trees" $ do
-        let net' = btc
+        let net' = bsv
         it "builds tree of right width at height 1" $ property testTreeWidth
         it "builds tree of right width at height 0" $ property testBaseWidth
-        it "builds and extracts partial merkle tree" $
-            property $
-            forAll
-                (listOf1 ((,) <$> arbitraryTxHash <*> arbitrary))
-                (buildExtractTree net')
-        it "merkle root test vectors" $
-            mapM_ runMerkleVector merkleVectors
+        it "builds and extracts partial merkle tree" $ property $
+            forAll (listOf1 ((,) <$> arbitraryTxHash <*> arbitrary)) (buildExtractTree net')
+        it "merkle root test vectors" $ mapM_ runMerkleVector merkleVectors
     describe "compact number" $ do
         it "compact number local vectors" testCompact
         it "compact number imported vectors" testCompactBitcoinCore
     describe "block serialization" $ do
-        it "encodes and decodes block" $
-            property $ forAll (arbitraryBlock net) cerealID
-        it "encodes and decodes block header" $
-            property $ forAll arbitraryBlockHeader cerealID
-        it "encodes and decodes getblocks" $
-            property $ forAll arbitraryGetBlocks cerealID
-        it "encodes and decodes getheaders" $
-            property $ forAll arbitraryGetHeaders cerealID
-        it "encodes and decdoes headers" $
-            property $ forAll arbitraryHeaders cerealID
-        it "encodes and decodes merkle block" $
-            property $ forAll arbitraryMerkleBlock cerealID
+        it "encodes and decodes block" $ property $ forAll (arbitraryBlock net) cerealID
+        it "encodes and decodes block header" $ property $ forAll arbitraryBlockHeader cerealID
+        it "encodes and decodes getblocks" $ property $ forAll arbitraryGetBlocks cerealID
+        it "encodes and decodes getheaders" $ property $ forAll arbitraryGetHeaders cerealID
+        it "encodes and decdoes headers" $ property $ forAll arbitraryHeaders cerealID
+        it "encodes and decodes merkle block" $ property $ forAll arbitraryMerkleBlock cerealID
     describe "helper functions" $ do
-        it "computes bitcoin block subsidy correctly" (testSubsidy btc)
-        it "computes regtest block subsidy correctly" (testSubsidy btcRegTest)
+        it "computes bitcoin block subsidy correctly" (testSubsidy bsv)
+        it "computes regtest block subsidy correctly" (testSubsidy bsvRegTest)
 
 -- 0 → → 2015 → → → → → → → 4031
 --       ↓
@@ -117,30 +103,21 @@ splitChain net = do
     tail4 <- go 5 (nodeHeader $ head tail2) 150
     e 2185 (head tail4)
     sp1 <- splitPoint (head tail1) (head tail3)
-    unless (sp1 == head start) $
-        error $
-        "Split point wrong between blocks 4031 and 4035: " ++
-        show (nodeHeight sp1)
+    unless (sp1 == head start) $ error $ "Split point wrong between blocks 4031 and 4035: " ++ show (nodeHeight sp1)
     sp2 <- splitPoint (head tail4) (head tail3)
-    unless (sp2 == head tail2) $
-        error $
-        "Split point wrong between blocks 2185 and 4035: " ++
-        show (nodeHeight sp2)
+    unless (sp2 == head tail2) $ error $ "Split point wrong between blocks 2185 and 4035: " ++ show (nodeHeight sp2)
   where
     e n bn =
-        unless (nodeHeight bn == n) $
-        error $
-        "Node height " ++
-        show (nodeHeight bn) ++ " of first chunk should be " ++ show n
+        unless (nodeHeight bn == n) $ error $ "Node height " ++ show (nodeHeight bn) ++ " of first chunk should be " ++
+        show n
     go seed start n = do
         let bhs = appendBlocks net seed start n
         bnE <- connectBlocks net myTime bhs
         case bnE of
             Right bn -> return bn
-            Left ex  -> error ex
+            Left ex -> error ex
 
 {- Merkle Trees -}
-
 testTreeWidth :: Int -> Property
 testTreeWidth i = i /= 0 ==> calcTreeWidth (abs i) (calcTreeHeight $ abs i) == 1
 
@@ -148,13 +125,10 @@ testBaseWidth :: Int -> Property
 testBaseWidth i = i /= 0 ==> calcTreeWidth (abs i) 0 == abs i
 
 buildExtractTree :: Network -> [(TxHash, Bool)] -> Bool
-buildExtractTree net txs =
-    r == buildMerkleRoot (map fst txs) && m == map fst (filter snd txs)
+buildExtractTree net txs = r == buildMerkleRoot (map fst txs) && m == map fst (filter snd txs)
   where
     (f, h) = buildPartialMerkle txs
-    (r, m) =
-        fromRight (error "Could not extract matches from Merkle tree") $
-        extractMatches net f h (length txs)
+    (r, m) = fromRight (error "Could not extract matches from Merkle tree") $ extractMatches net f h (length txs)
 
 testCompact :: Assertion
 testCompact = do
@@ -168,10 +142,7 @@ testCompact = do
 testCompactBitcoinCore :: Assertion
 testCompactBitcoinCore = do
     assertEqual "zero" (0, False) (decodeCompact 0x00000000)
-    assertEqual
-        "zero (encode · decode)"
-        0x00000000
-        (encodeCompact . fst $ decodeCompact 0x00000000)
+    assertEqual "zero (encode · decode)" 0x00000000 (encodeCompact . fst $ decodeCompact 0x00000000)
     assertEqual "rounds to zero" (0, False) (decodeCompact 0x00123456)
     assertEqual "rounds to zero" (0, False) (decodeCompact 0x01003456)
     assertEqual "rounds to zero" (0, False) (decodeCompact 0x02000056)
@@ -183,77 +154,37 @@ testCompactBitcoinCore = do
     assertEqual "rounds to zero" (0, False) (decodeCompact 0x03800000)
     assertEqual "rounds to zero" (0, False) (decodeCompact 0x04800000)
     assertEqual "vector 1 (decode)" (0x12, False) (decodeCompact 0x01123456)
-    assertEqual
-        "vector 1 (encode · decode)"
-        0x01120000
-        (encodeCompact . fst $ decodeCompact 0x01123456)
+    assertEqual "vector 1 (encode · decode)" 0x01120000 (encodeCompact . fst $ decodeCompact 0x01123456)
     assertEqual "0x80 bit set" 0x02008000 (encodeCompact 0x80)
-    assertEqual
-        "vector 2 (negative) (decode)"
-        (-0x7e, False)
-        (decodeCompact 0x01fedcba)
-    assertEqual
-        "vector 2 (negative) (encode · decode)"
-        0x01fe0000
-        (encodeCompact . fst $ decodeCompact 0x01fedcba)
+    assertEqual "vector 2 (negative) (decode)" (-0x7e, False) (decodeCompact 0x01fedcba)
+    assertEqual "vector 2 (negative) (encode · decode)" 0x01fe0000 (encodeCompact . fst $ decodeCompact 0x01fedcba)
     assertEqual "vector 3 (decode)" (0x1234, False) (decodeCompact 0x02123456)
-    assertEqual
-        "vector 3 (encode · decode)"
-        0x02123400
-        (encodeCompact . fst $ decodeCompact 0x02123456)
+    assertEqual "vector 3 (encode · decode)" 0x02123400 (encodeCompact . fst $ decodeCompact 0x02123456)
     assertEqual "vector 4 (decode)" (0x123456, False) (decodeCompact 0x03123456)
-    assertEqual
-        "vector 4 (encode · decode)"
-        0x03123456
-        (encodeCompact . fst $ decodeCompact 0x03123456)
-    assertEqual
-        "vector 5 (decode)"
-        (0x12345600, False)
-        (decodeCompact 0x04123456)
-    assertEqual
-        "vector 5 (encode · decode)"
-        0x04123456
-        (encodeCompact . fst $ decodeCompact 0x04123456)
-    assertEqual
-        "vector 6 (decode)"
-        (-0x12345600, False)
-        (decodeCompact 0x04923456)
-    assertEqual
-        "vector 6 (encode · decode)"
-        0x04923456
-        (encodeCompact . fst $ decodeCompact 0x04923456)
-    assertEqual
-        "vector 7 (decode)"
-        (0x92340000, False)
-        (decodeCompact 0x05009234)
-    assertEqual
-        "vector 7 (encode · decode)"
-        0x05009234
-        (encodeCompact . fst $ decodeCompact 0x05009234)
+    assertEqual "vector 4 (encode · decode)" 0x03123456 (encodeCompact . fst $ decodeCompact 0x03123456)
+    assertEqual "vector 5 (decode)" (0x12345600, False) (decodeCompact 0x04123456)
+    assertEqual "vector 5 (encode · decode)" 0x04123456 (encodeCompact . fst $ decodeCompact 0x04123456)
+    assertEqual "vector 6 (decode)" (-0x12345600, False) (decodeCompact 0x04923456)
+    assertEqual "vector 6 (encode · decode)" 0x04923456 (encodeCompact . fst $ decodeCompact 0x04923456)
+    assertEqual "vector 7 (decode)" (0x92340000, False) (decodeCompact 0x05009234)
+    assertEqual "vector 7 (encode · decode)" 0x05009234 (encodeCompact . fst $ decodeCompact 0x05009234)
     assertEqual
         "vector 8 (decode)"
-        ( 0x1234560000000000000000000000000000000000000000000000000000000000
-        , False)
+        (0x1234560000000000000000000000000000000000000000000000000000000000, False)
         (decodeCompact 0x20123456)
-    assertEqual
-        "vector 8 (encode · decode)"
-        0x20123456
-        (encodeCompact . fst $ decodeCompact 0x20123456)
+    assertEqual "vector 8 (encode · decode)" 0x20123456 (encodeCompact . fst $ decodeCompact 0x20123456)
     assertBool "vector 9 (decode) (overflow)" (snd $ decodeCompact 0xff123456)
-    assertBool
-        "vector 9 (decode) (positive)"
-        ((> 0) . fst $ decodeCompact 0xff123456)
+    assertBool "vector 9 (decode) (positive)" ((> 0) . fst $ decodeCompact 0xff123456)
 
 runMerkleVector :: (Text, [Text]) -> Assertion
-runMerkleVector (r, hs) =
-    assertBool "merkle vector" $
-        buildMerkleRoot (map f hs) == getTxHash (f r)
+runMerkleVector (r, hs) = assertBool "merkle vector" $ buildMerkleRoot (map f hs) == getTxHash (f r)
   where
     f = fromJust . hexToTxHash
 
 merkleVectors :: [(Text, [Text])]
-merkleVectors =
+merkleVectors
       -- Block 000000000000cd7e8cf6510303dde76121a1a791c15dba0be4be7022b07cf9e1
+ =
     [ ( "fb6698ac95b754256c5e71b4fbe07638cb6ca83ee67f44e181b91727f09f4b1f"
       , [ "dd96fdcfaec994bf583af650ff6022980ee0ba1686d84d0a3a2d24eabf34bc52"
         , "1bc216f786a564378710ae589916fc8e092ddfb9f24fe6c47b733550d476d5d9"
@@ -266,8 +197,7 @@ merkleVectors =
         , "b5e48e94e3f2fba197b3f591e01f47e185d7834d669529d44078e41c671aab0f"
         , "3b56aeadfc0c5484fd507bc89f13f2e5f61c42e0a4ae9062eda9a9aeef7db6a4"
         , "2affa187e1ebb94a2a86578b9f64951e854ff3d346fef259acfb6d0f5212e0d3"
-        ]
-      )
+        ])
       -- Block 00000000000007cc4b6f07bfed72bccc1ed8dd031a93969a4c22211f784457d4
     , ( "886fea311d2dc64c315519f2d647e43998d780d2170f77e53dc0d85bf2ee680c"
       , [ "c9c9e5211512629fd111cc071d745b8c79bf486b4ea95489eb5de08b5d786b8e"
@@ -280,25 +210,21 @@ merkleVectors =
         , "2f676b9aa5bc0ebf3395032c84c466e40cac29f80434cd1138e31c2d0fcc5c13"
         , "37567d559fbfae07fda9a90de0ce30b202128bc8ebdfef5ad2b53e865a3478c2"
         , "0b8e6c1200c454361e94e261738429e9c9b8dcffd85ec8511bbf5dc7e2e0ada8"
-        ]
-      )
+        ])
       -- Block 00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048
     , ( "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"
-      , [ "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098" ]
-      )
+      , ["0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"])
       -- Block 000000000004d160ac1f7b775d7c1823345aeadd5fcb29ca2ad2403bb7babd4c
     , ( "aae018650f513fc42d55b2210ec3ceeeb194fb1261d37989de07451fc0cbac5c"
       , [ "a4454f22831acd7904a9902c5070a3ee4bf4c2b13bc6b2dc66735dd3c4414028"
         , "45297f334278885108dd38a0b689ed95a4373dd3f7e4413e6aebdc2654fb771b"
-        ]
-      )
+        ])
       -- Block 000000000001d1b13a7e86ddb20da178f20d6da5cd037a29c2a15b8b84cc774e
     , ( "ca3580505feb87544760ac14a5859659e23be05f765bbed9f86a3c9aad1a5d0c"
       , [ "60702384c6e9d34ff03c2b3e726bdc649befe603216815bd0a2974921d0d9549"
         , "11f40f58941d2a81a1616a3b84b7dd8b9d07e68750827de488c11a18f54220bb"
         , "d78e82527aa8cf16e375010bc666362c0258d3c0da1885a1871121706da8b633"
-        ]
-      )
+        ])
       -- Block 0000000000000630a4e2266a31776e952a19b7c99a6387917d9de9032f608021
     , ( "dcce8be0a9a41e7bb726c5b49d957d90b5308e3dc5dce070ccbc8996e265a6c2"
       , [ "c0f58ff12cd1023b05f8f7035cc62bf50958ddb216a4e0eb5471deb7ef25fe81"
@@ -330,14 +256,11 @@ merkleVectors =
         , "e95a7d0d477fd3db22756a3fd390a50c7bc48dc9e946fea9d24bd0866b3bb0e9"
         , "a72fec99d14939216628aaf7a0afc4c017113bcae964e777e6b508864eeaacc4"
         , "8548433310fcf75dbbc042121e8318c678e0a017534786dd322a91cebe8d213f"
-        ]
-      )
+        ])
     ]
 
 testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
-testID x =
-    (A.decode . A.encode) (singleton ("object" :: String) x) ==
-    Just (singleton ("object" :: String) x)
+testID x = (A.decode . A.encode) (singleton ("object" :: String) x) == Just (singleton ("object" :: String) x)
 
 cerealID :: (Serialize a, Eq a) => a -> Bool
 cerealID x = S.decode (S.encode x) == Right x

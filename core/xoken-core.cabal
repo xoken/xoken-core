@@ -45,6 +45,7 @@ library
       Network.Xoken.Block.Common
       Network.Xoken.Transaction.Common
       Network.Xoken.Script.Standard
+      Network.Xoken.Script.Interpreter
 
   other-modules:
       Network.Xoken.Crypto.Signature

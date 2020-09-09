@@ -16,6 +16,7 @@ module Network.Xoken.Constants
     , bsv
     , bsvTest
     , bsvSTN
+    , bsvRegTest
     , allNets
     , netByName
     , netByIdent

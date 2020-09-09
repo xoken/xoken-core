@@ -1,26 +1,29 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Xoken.Keys.ExtendedSpec (spec) where
 
-import           Data.Aeson                 as A
-import           Data.Aeson.Types           as A
-import           Data.Bits                  ((.&.))
+module Network.Xoken.Keys.ExtendedSpec
+    ( spec
+    ) where
+
+import Data.Aeson as A
+import Data.Aeson.Types as A
+import Data.Bits ((.&.))
 import qualified Data.ByteString.Lazy.Char8 as B8
-import           Data.Either                (isLeft)
-import           Data.Map.Strict            (singleton)
-import           Data.Maybe                 (fromJust, isJust, isNothing)
-import           Data.Serialize             as S
-import           Data.String                (fromString)
-import           Data.String.Conversions    (cs)
-import           Data.Text                  (Text)
-import           Data.Word                  (Word32)
-import           Network.Xoken.Address
-import           Network.Xoken.Constants
-import           Network.Xoken.Keys
-import           Network.Xoken.Test
-import           Network.Xoken.Util
-import           Test.Hspec
-import           Test.HUnit                 (Assertion, assertBool, assertEqual)
-import           Test.QuickCheck            hiding ((.&.))
+import Data.Either (isLeft)
+import Data.Map.Strict (singleton)
+import Data.Maybe (fromJust, isJust, isNothing)
+import Data.Serialize as S
+import Data.String (fromString)
+import Data.String.Conversions (cs)
+import Data.Text (Text)
+import Data.Word (Word32)
+import Network.Xoken.Address
+import Network.Xoken.Constants
+import Network.Xoken.Keys
+import Network.Xoken.Test
+import Network.Xoken.Util
+import Test.HUnit (Assertion, assertBool, assertEqual)
+import Test.Hspec
+import Test.QuickCheck hiding ((.&.))
 
 spec :: Spec
 spec = do
@@ -47,88 +50,53 @@ spec = do
         it "from json" testFromJsonPath
         it "to json" testToJsonPath
     describe "extended keys" $ do
-        let net = btc
+        let net = bsv
         it "computes pubkey of a subkey is subkey of the pubkey" $
             property $ forAll arbitraryXPrvKey pubKeyOfSubKeyIsSubKeyOfPubKey
         it "exports and imports extended private key" $
-            property $
-            forAll arbitraryXPrvKey $ \k ->
-                xPrvImport net (xPrvExport net k) == Just k
+            property $ forAll arbitraryXPrvKey $ \k -> xPrvImport net (xPrvExport net k) == Just k
         it "exports and imports extended public key" $
-            property $
-            forAll arbitraryXPubKey $ \(_, k) ->
-                xPubImport net (xPubExport net k) == Just k
-        it "show and read derivation path" $
-            property $ forAll arbitraryDerivPath $ \p -> read (show p) == p
-        it "show and read hard derivation path" $
-            property $ forAll arbitraryHardPath $ \p -> read (show p) == p
-        it "show and read soft derivation path" $
-            property $ forAll arbitrarySoftPath $ \p -> read (show p) == p
+            property $ forAll arbitraryXPubKey $ \(_, k) -> xPubImport net (xPubExport net k) == Just k
+        it "show and read derivation path" $ property $ forAll arbitraryDerivPath $ \p -> read (show p) == p
+        it "show and read hard derivation path" $ property $ forAll arbitraryHardPath $ \p -> read (show p) == p
+        it "show and read soft derivation path" $ property $ forAll arbitrarySoftPath $ \p -> read (show p) == p
         it "from string derivation path" $
-            property $
-            forAll arbitraryDerivPath $ \p -> fromString (cs $ pathToStr p) == p
+            property $ forAll arbitraryDerivPath $ \p -> fromString (cs $ pathToStr p) == p
         it "from string hard derivation path" $
-            property $
-            forAll arbitraryHardPath $ \p -> fromString (cs $ pathToStr p) == p
+            property $ forAll arbitraryHardPath $ \p -> fromString (cs $ pathToStr p) == p
         it "from string soft derivation path" $
-            property $
-            forAll arbitrarySoftPath $ \p -> fromString (cs $ pathToStr p) == p
+            property $ forAll arbitrarySoftPath $ \p -> fromString (cs $ pathToStr p) == p
         it "from and to lists of derivation paths" $
-            property $
-            forAll arbitraryDerivPath $ \p -> listToPath (pathToList p) == p
+            property $ forAll arbitraryDerivPath $ \p -> listToPath (pathToList p) == p
         it "from and to lists of hard derivation paths" $
-            property $
-            forAll arbitraryHardPath $ \p ->
-                toHard (listToPath $ pathToList p) == Just p
+            property $ forAll arbitraryHardPath $ \p -> toHard (listToPath $ pathToList p) == Just p
         it "from and to lists of soft derivation paths" $
-            property $
-            forAll arbitrarySoftPath $ \p ->
-                toSoft (listToPath $ pathToList p) == Just p
-        it "read and show parsed path" $
-            property $ forAll arbitraryParsedPath $ \p -> read (show p) == p
+            property $ forAll arbitrarySoftPath $ \p -> toSoft (listToPath $ pathToList p) == Just p
+        it "read and show parsed path" $ property $ forAll arbitraryParsedPath $ \p -> read (show p) == p
         it "encodes and decodes extended private key" $
-            forAll
-                arbitraryXPrvKey
-                (testCustom (xPrvFromJSON net) (xPrvToJSON net))
+            forAll arbitraryXPrvKey (testCustom (xPrvFromJSON net) (xPrvToJSON net))
         it "encodes and decodes extended public key" $
-            forAll
-                arbitraryXPubKey
-                (testCustom (xPubFromJSON net) (xPubToJSON net) . snd)
-        it "encodes and decodes derivation path" $
-            forAll arbitraryDerivPath testID
-        it "encodes and decodes parsed derivation path" $
-            forAll arbitraryParsedPath testID
+            forAll arbitraryXPubKey (testCustom (xPubFromJSON net) (xPubToJSON net) . snd)
+        it "encodes and decodes derivation path" $ forAll arbitraryDerivPath testID
+        it "encodes and decodes parsed derivation path" $ forAll arbitraryParsedPath testID
         it "encodes and decodes extended private key" $
-            property $
-            forAll arbitraryXPrvKey $
-            testPutGet (getXPrvKey net) (putXPrvKey net)
+            property $ forAll arbitraryXPrvKey $ testPutGet (getXPrvKey net) (putXPrvKey net)
         it "shows and reads extended private key" $
-            property $
-            forAll arbitraryXPrvKey $ \k -> read (show k) `shouldBe` k
+            property $ forAll arbitraryXPrvKey $ \k -> read (show k) `shouldBe` k
         it "shows and reads extended private key" $
-            property $
-            forAll arbitraryXPubKey $ \(prv, pub) ->
-                read (show (prv, pub)) `shouldBe` (prv, pub)
+            property $ forAll arbitraryXPubKey $ \(prv, pub) -> read (show (prv, pub)) `shouldBe` (prv, pub)
 
 testFromJsonPath :: Assertion
 testFromJsonPath =
     sequence_ $ do
         path <- jsonPathVectors
-        return $
-            assertEqual
-                path
-                (Just [fromString path :: DerivPath])
-                (A.decode $ B8.pack $ "[\"" ++ path ++ "\"]")
+        return $ assertEqual path (Just [fromString path :: DerivPath]) (A.decode $ B8.pack $ "[\"" ++ path ++ "\"]")
 
 testToJsonPath :: Assertion
 testToJsonPath =
     sequence_ $ do
         path <- jsonPathVectors
-        return $
-            assertEqual
-                path
-                (B8.pack $ "[\"" ++ path ++ "\"]")
-                (A.encode [fromString path :: ParsedPath])
+        return $ assertEqual path (B8.pack $ "[\"" ++ path ++ "\"]") (A.encode [fromString path :: ParsedPath])
 
 jsonPathVectors :: [String]
 jsonPathVectors =
@@ -176,168 +144,127 @@ testApplyPath :: Assertion
 testApplyPath =
     sequence_ $ do
         (key, path, final) <- applyPathVectors
-        return $
-            assertEqual path final $ applyPath (fromJust $ parsePath path) key
+        return $ assertEqual path final $ applyPath (fromJust $ parsePath path) key
 
 testBadApplyPath :: Assertion
 testBadApplyPath =
     sequence_ $ do
         (key, path) <- badApplyPathVectors
-        return $
-            assertBool path $ isLeft $ applyPath (fromJust $ parsePath path) key
+        return $ assertBool path $ isLeft $ applyPath (fromJust $ parsePath path) key
 
 testDerivePubPath :: Assertion
 testDerivePubPath =
     sequence_ $ do
         (key, path, final) <- derivePubPathVectors
-        return $
-            assertEqual path final $
-            derivePubPath (fromString path :: SoftPath) key
+        return $ assertEqual path final $ derivePubPath (fromString path :: SoftPath) key
 
 testDerivePrvPath :: Assertion
 testDerivePrvPath =
     sequence_ $ do
         (key, path, final) <- derivePrvPathVectors
-        return $
-            assertEqual path final $
-            derivePath (fromString path :: DerivPath) key
+        return $ assertEqual path final $ derivePath (fromString path :: DerivPath) key
 
 derivePubPathVectors :: [(XPubKey, String, XPubKey)]
 derivePubPathVectors =
-    [ ( xpub, "M", xpub )
-    , ( xpub, "M/8", pubSubKey xpub 8 )
-    , ( xpub, "M/8/30/1", foldl pubSubKey xpub [8,30,1] )
-    ]
+    [(xpub, "M", xpub), (xpub, "M/8", pubSubKey xpub 8), (xpub, "M/8/30/1", foldl pubSubKey xpub [8, 30, 1])]
   where
-    xprv = fromJust $ xPrvImport btc
-        "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
+    xprv =
+        fromJust $
+        xPrvImport
+            bsv
+            "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
         \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
 
 derivePrvPathVectors :: [(XPrvKey, String, XPrvKey)]
 derivePrvPathVectors =
-    [ ( xprv, "m", xprv )
-    , ( xprv, "M", xprv )
-    , ( xprv, "m/8'", hardSubKey xprv 8 )
-    , ( xprv, "M/8'", hardSubKey xprv 8 )
-    , ( xprv, "m/8'/30/1"
-      , foldl prvSubKey (hardSubKey xprv 8) [30,1]
-      )
-    , ( xprv, "M/8'/30/1"
-      , foldl prvSubKey (hardSubKey xprv 8) [30,1]
-      )
-    , ( xprv, "m/3/20"
-      , foldl prvSubKey xprv [3,20]
-      )
-    , ( xprv, "M/3/20"
-      , foldl prvSubKey xprv [3,20]
-      )
-    ]
-  where
-    xprv = fromJust $ xPrvImport btc
-        "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
-        \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
-
-applyPathVectors :: [(XKey, String, Either String XKey)]
-applyPathVectors =
-    [ (XPrv xprv btc, "m", Right (XPrv xprv btc))
-    , (XPrv xprv btc, "M", Right (XPub xpub btc))
-    , (XPrv xprv btc, "m/8'", Right (XPrv (hardSubKey xprv 8) btc))
-    , ( XPrv xprv btc
-      , "M/8'"
-      , Right (XPub (deriveXPubKey (hardSubKey xprv 8)) btc))
-    , ( XPrv xprv btc
-      , "m/8'/30/1"
-      , Right (XPrv (foldl prvSubKey (hardSubKey xprv 8) [30, 1]) btc))
-    , ( XPrv xprv btc
-      , "M/8'/30/1"
-      , Right
-            (XPub
-                 (deriveXPubKey (foldl prvSubKey (hardSubKey xprv 8) [30, 1]))
-                 btc))
-    , (XPrv xprv btc, "m/3/20", Right (XPrv (foldl prvSubKey xprv [3, 20]) btc))
-    , ( XPrv xprv btc
-      , "M/3/20"
-      , Right (XPub (deriveXPubKey (foldl prvSubKey xprv [3, 20])) btc))
-    , ( XPub xpub btc
-      , "M/3/20"
-      , Right (XPub (deriveXPubKey (foldl prvSubKey xprv [3, 20])) btc))
+    [ (xprv, "m", xprv)
+    , (xprv, "M", xprv)
+    , (xprv, "m/8'", hardSubKey xprv 8)
+    , (xprv, "M/8'", hardSubKey xprv 8)
+    , (xprv, "m/8'/30/1", foldl prvSubKey (hardSubKey xprv 8) [30, 1])
+    , (xprv, "M/8'/30/1", foldl prvSubKey (hardSubKey xprv 8) [30, 1])
+    , (xprv, "m/3/20", foldl prvSubKey xprv [3, 20])
+    , (xprv, "M/3/20", foldl prvSubKey xprv [3, 20])
     ]
   where
     xprv =
         fromJust $
         xPrvImport
-            btc
+            bsv
+            "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
+        \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
+
+applyPathVectors :: [(XKey, String, Either String XKey)]
+applyPathVectors =
+    [ (XPrv xprv bsv, "m", Right (XPrv xprv bsv))
+    , (XPrv xprv bsv, "M", Right (XPub xpub bsv))
+    , (XPrv xprv bsv, "m/8'", Right (XPrv (hardSubKey xprv 8) bsv))
+    , (XPrv xprv bsv, "M/8'", Right (XPub (deriveXPubKey (hardSubKey xprv 8)) bsv))
+    , (XPrv xprv bsv, "m/8'/30/1", Right (XPrv (foldl prvSubKey (hardSubKey xprv 8) [30, 1]) bsv))
+    , (XPrv xprv bsv, "M/8'/30/1", Right (XPub (deriveXPubKey (foldl prvSubKey (hardSubKey xprv 8) [30, 1])) bsv))
+    , (XPrv xprv bsv, "m/3/20", Right (XPrv (foldl prvSubKey xprv [3, 20]) bsv))
+    , (XPrv xprv bsv, "M/3/20", Right (XPub (deriveXPubKey (foldl prvSubKey xprv [3, 20])) bsv))
+    , (XPub xpub bsv, "M/3/20", Right (XPub (deriveXPubKey (foldl prvSubKey xprv [3, 20])) bsv))
+    ]
+  where
+    xprv =
+        fromJust $
+        xPrvImport
+            bsv
             "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
         \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
 
 badApplyPathVectors :: [(XKey, String)]
-badApplyPathVectors =
-    [ (XPub xpub btc, "m/8'")
-    , (XPub xpub btc, "M/8'")
-    , (XPub xpub btc, "M/1/2/3'/4/5")
-    ]
+badApplyPathVectors = [(XPub xpub bsv, "m/8'"), (XPub xpub bsv, "M/8'"), (XPub xpub bsv, "M/1/2/3'/4/5")]
   where
     xprv =
         fromJust $
         xPrvImport
-            btc
+            bsv
             "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
         \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
-
 
 runXKeyVec :: ([Text], XPrvKey) -> Assertion
 runXKeyVec (v, m) = do
     assertBool "xPrvID" $ encodeHex (S.encode $ xPrvID m) == head v
     assertBool "xPrvFP" $ encodeHex (S.encode $ xPrvFP m) == v !! 1
-    assertBool "xPrvAddr" $
-        addrToString btc (xPubAddr $ deriveXPubKey m) == Just (v !! 2)
+    assertBool "xPrvAddr" $ addrToString bsv (xPubAddr $ deriveXPubKey m) == Just (v !! 2)
     assertBool "prvKey" $ encodeHex (getSecKey $ xPrvKey m) == v !! 3
-    assertBool "xPrvWIF" $ xPrvWif btc m == v !! 4
-    assertBool "pubKey" $
-        encodeHex (exportPubKey True $ xPubKey $ deriveXPubKey m) == v !! 5
+    assertBool "xPrvWIF" $ xPrvWif bsv m == v !! 4
+    assertBool "pubKey" $ encodeHex (exportPubKey True $ xPubKey $ deriveXPubKey m) == v !! 5
     assertBool "chain code" $ encodeHex (S.encode $ xPrvChain m) == v !! 6
-    assertBool "Hex PubKey" $
-        encodeHex (runPut $ putXPubKey btc $ deriveXPubKey m) == v !! 7
-    assertBool "Hex PrvKey" $ encodeHex (runPut (putXPrvKey btc m)) == v !! 8
-    assertBool "Base58 PubKey" $ xPubExport btc (deriveXPubKey m) == v !! 9
-    assertBool "Base58 PrvKey" $ xPrvExport btc m == v !! 10
+    assertBool "Hex PubKey" $ encodeHex (runPut $ putXPubKey bsv $ deriveXPubKey m) == v !! 7
+    assertBool "Hex PrvKey" $ encodeHex (runPut (putXPrvKey bsv m)) == v !! 8
+    assertBool "Base58 PubKey" $ xPubExport bsv (deriveXPubKey m) == v !! 9
+    assertBool "Base58 PrvKey" $ xPrvExport bsv m == v !! 10
 
 -- BIP 0032 Test Vectors
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
-
 xKeyVec :: [([Text], XPrvKey)]
 xKeyVec = zip xKeyResVec $ foldl f [m] der
-    where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey $ fromJust $ decodeHex m0
-          der = [ flip hardSubKey 0
-                , flip prvSubKey 1
-                , flip hardSubKey 2
-                , flip prvSubKey 2
-                , flip prvSubKey 1000000000
-                ]
+  where
+    f acc d = acc ++ [d $ last acc]
+    m = makeXPrvKey $ fromJust $ decodeHex m0
+    der = [flip hardSubKey 0, flip prvSubKey 1, flip hardSubKey 2, flip prvSubKey 2, flip prvSubKey 1000000000]
 
 xKeyVec2 :: [([Text], XPrvKey)]
 xKeyVec2 = zip xKeyResVec2 $ foldl f [m] der
-    where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey $ fromJust $ decodeHex m1
-          der = [ flip prvSubKey 0
-                , flip hardSubKey 2147483647
-                , flip prvSubKey 1
-                , flip hardSubKey 2147483646
-                , flip prvSubKey 2
-                ]
+  where
+    f acc d = acc ++ [d $ last acc]
+    m = makeXPrvKey $ fromJust $ decodeHex m1
+    der = [flip prvSubKey 0, flip hardSubKey 2147483647, flip prvSubKey 1, flip hardSubKey 2147483646, flip prvSubKey 2]
 
 m0 :: Text
 m0 = "000102030405060708090a0b0c0d0e0f"
 
 xKeyResVec :: [[Text]]
-xKeyResVec =
-    [
+xKeyResVec
       -- m
-      [ "3442193e1bb70916e914552172cd4e2dbc9df811"
+ =
+    [ [ "3442193e1bb70916e914552172cd4e2dbc9df811"
       , "3442193e"
       , "15mKKb2eos1hWa6tisdPwwDC1a5J1y9nma"
       , "e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35"
@@ -417,13 +344,14 @@ xKeyResVec =
     ]
 
 m1 :: Text
-m1 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
+m1 =
+    "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
 
 xKeyResVec2 :: [[Text]]
-xKeyResVec2 =
-    [
+xKeyResVec2
       -- m
-      [ "bd16bee53961a47d6ad888e29545434a89bdfe95"
+ =
+    [ [ "bd16bee53961a47d6ad888e29545434a89bdfe95"
       , "bd16bee5"
       , "1JEoxevbLLG8cVqeoGKQiAwoWbNYSUyYjg"
       , "4b03d6fc340455b363f51020ad3ecca4f0850280cf436c70c727923f6db46c3e"
@@ -503,16 +431,12 @@ xKeyResVec2 =
     ]
 
 pubKeyOfSubKeyIsSubKeyOfPubKey :: XPrvKey -> Word32 -> Bool
-pubKeyOfSubKeyIsSubKeyOfPubKey k i =
-    deriveXPubKey (prvSubKey k i') == pubSubKey (deriveXPubKey k) i'
+pubKeyOfSubKeyIsSubKeyOfPubKey k i = deriveXPubKey (prvSubKey k i') == pubSubKey (deriveXPubKey k) i'
   where
     i' = fromIntegral $ i .&. 0x7fffffff -- make it a public derivation
 
-
 testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
-testID x =
-    (A.decode . A.encode) (singleton ("object" :: String) x) ==
-    Just (singleton ("object" :: String) x)
+testID x = (A.decode . A.encode) (singleton ("object" :: String) x) == Just (singleton ("object" :: String) x)
 
 testCustom :: Eq a => (Value -> Parser a) -> (a -> Value) -> a -> Bool
 testCustom f g x = parseMaybe f (g x) == Just x
