@@ -154,7 +154,13 @@ parseLegacyTx = do
     replicateList (VarInt c) = replicateM (fromIntegral c) S.get
 
 instance FromJSON Tx where
-    parseJSON = withText "Tx" $ maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex)
+    parseJSON = withObject "Tx" $ \o ->
+        Tx
+            <$> (o .: "version")
+            <*> (o .: "ins")
+            <*> (o .: "outs")
+            <*> (o .: "locktime")
+
 
 instance ToJSON Tx where
     toJSON (Tx v i o l) = object ["version" .= v, "ins" .= i, "outs" .= o, "locktime" .= l]
@@ -205,11 +211,20 @@ instance Serialize TxOut where
 instance ToJSON TxOut where
     toJSON (TxOut v s) = object ["value" .= v, "script" .= s]
 
+instance FromJSON TxOut where
+    parseJSON = withObject "TxOut" $ \o -> TxOut <$> (o .: "value") <*> (o .: "script")
+
 instance ToJSON TxIn where
     toJSON (TxIn op scr seq) = object ["outpoint" .= op, "script" .= scr, "sequence" .= seq]
+    
+instance FromJSON TxIn where
+    parseJSON = withObject "TxIn" $ \o -> TxIn <$> (o .: "outpoint") <*> (o .: "script") <*> (o .: "sequence")
 
 instance ToJSON ByteString where
     toJSON a = A.String $ encodeHex a
+
+instance FromJSON ByteString where
+    parseJSON = withText "bytestring" $ maybe mzero return . decodeHex
 
 -- | The 'OutPoint' refers to a transaction output being spent.
 data OutPoint =
@@ -222,7 +237,7 @@ data OutPoint =
     deriving (Show, Read, Eq, Ord, Generic, Hashable, CBOR.Serialise)
 
 instance FromJSON OutPoint where
-    parseJSON = withText "OutPoint" $ maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex)
+    parseJSON = withObject "OutPoint" $ \o -> OutPoint <$> (o .: "hash") <*> (o .: "index")
 
 instance ToJSON OutPoint where
     toJSON (OutPoint h i) = object ["hash" .= h, "index" .= i]

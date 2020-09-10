@@ -178,7 +178,7 @@ arbitraryValidSigHash net = do
         if isJust (getSigHashForkId net)
             then [id, setForkIdFlag]
             else [id]
-    f2 <- elements []
+    f2 <- elements [id]
     return $ f1 $ f2 sh
 
 -- | Arbitrary message hash, private key and corresponding 'TxSignature'. The
