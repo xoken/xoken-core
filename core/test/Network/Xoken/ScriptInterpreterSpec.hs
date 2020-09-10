@@ -62,7 +62,7 @@ spec = do
                      , OP_LSHIFT
                      ]
                    )
-      `shouldBe` (Seq.empty, Just $ TooMuchToLShift 9223372036854775808)
+      `shouldBe` (Seq.empty, Just $ TooMuchToLShift (2 ^ 63))
 
 test ops expected_elems =
   interpret (Script ops) `shouldBe` (Seq.fromList expected_elems, Nothing)

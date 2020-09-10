@@ -143,8 +143,8 @@ data ScriptOp
       -- Splice
     | OP_CAT
     | OP_SUBSTR
-    | OP_LEFT
-    | OP_RIGHT
+    | OP_NUM2BIN
+    | OP_BIN2NUM
     | OP_SIZE
       -- Bitwise logic
     | OP_INVERT
@@ -283,8 +283,8 @@ instance Serialize ScriptOp where
             -- Splice
             | op == 0x7e = return OP_CAT
             | op == 0x7f = return OP_SUBSTR
-            | op == 0x80 = return OP_LEFT
-            | op == 0x81 = return OP_RIGHT
+            | op == 0x80 = return OP_NUM2BIN
+            | op == 0x81 = return OP_BIN2NUM
             | op == 0x82 = return OP_SIZE
             -- Bitwise logic
             | op == 0x83 = return OP_INVERT
@@ -429,8 +429,8 @@ instance Serialize ScriptOp where
         -- Splice
             OP_CAT -> putWord8 0x7e
             OP_SUBSTR -> putWord8 0x7f
-            OP_LEFT -> putWord8 0x80
-            OP_RIGHT -> putWord8 0x81
+            OP_NUM2BIN -> putWord8 0x80
+            OP_BIN2NUM -> putWord8 0x81
             OP_SIZE -> putWord8 0x82
         -- Bitwise Logic
             OP_INVERT -> putWord8 0x83

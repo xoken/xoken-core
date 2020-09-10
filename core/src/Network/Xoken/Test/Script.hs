@@ -88,8 +88,8 @@ arbitraryScriptOp =
         -- Splice
         , return OP_CAT
         , return OP_SUBSTR
-        , return OP_LEFT
-        , return OP_RIGHT
+        , return OP_NUM2BIN
+        , return OP_BIN2NUM
         , return OP_SIZE
         -- Bitwise logic
         , return OP_INVERT
