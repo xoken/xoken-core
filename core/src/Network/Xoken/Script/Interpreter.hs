@@ -2,6 +2,7 @@
 
 module Network.Xoken.Script.Interpreter where
 
+import           Data.Foldable                  ( toList )
 import           Data.Word                      ( Word8 )
 import           Data.Bits                      ( complement
                                                 , (.&.)
@@ -36,10 +37,13 @@ data InterpreterError
   deriving (Show, Eq)
 
 data InterpreterCommands a
-    = Terminate InterpreterError a
+    = Terminate InterpreterError
     | Push Elem a
     | Pop (Elem -> a)
     | Peek (Elem -> a)
+    | PopN Int ([Elem] -> a)
+    | PeekN Int ([Elem] -> a)
+    | StackSize (Elem -> a)
     deriving (Functor)
 
 type Cmd = Free InterpreterCommands
@@ -56,10 +60,23 @@ interpretCmd (Free (Pop k   )) stack = case Seq.viewl stack of
 interpretCmd (Free (Peek k)) stack = case Seq.viewl stack of
   x Seq.:< _ -> interpretCmd (k x) stack
   _          -> (stack, Just StackUnderflow)
-interpretCmd (Free (Terminate e _)) stack = (stack, Just e)
+interpretCmd (Free (PopN n k)) stack
+  | length topn == n = interpretCmd (k $ reverse $ toList topn) rest
+  | otherwise        = (stack, Just StackUnderflow)
+  where (topn, rest) = Seq.splitAt n stack
+interpretCmd (Free (PeekN n k)) stack
+  | length topn == n = interpretCmd (k $ reverse $ toList topn) stack
+  | otherwise        = (stack, Just StackUnderflow)
+  where topn = Seq.take n stack
+interpretCmd (Free (StackSize k)) stack =
+  interpretCmd (k $ fromIntegral $ length stack) stack
+interpretCmd (Free (Terminate e)) stack = (stack, Just e)
 
 terminate :: InterpreterError -> Cmd ()
-terminate e = liftF (Terminate e ())
+terminate e = liftF (Terminate e)
+
+stacksize :: Cmd Elem
+stacksize = liftF (StackSize id)
 
 push :: Elem -> Cmd ()
 push x = liftF (Push x ())
@@ -74,22 +91,16 @@ pushn :: [Elem] -> Cmd ()
 pushn = sequence_ . map push
 
 popn :: Int -> Cmd [Elem]
-popn n = replicateM n pop >>= pure . reverse
+popn n = liftF (PopN n id)
 
 peekn :: Int -> Cmd [Elem]
-peekn n = do
-  xs <- popn $ n - 1
-  x  <- peek
-  pure $ x : xs
-
-popnpush :: Cmd [Elem] -> ([Elem] -> [Elem]) -> Cmd ()
-popnpush popn f = popn >>= pushn . f
+peekn n = liftF (PeekN n id)
 
 arrange :: Int -> ([Elem] -> [Elem]) -> Cmd ()
-arrange = popnpush . popn
+arrange n f = popn n >>= pushn . f
 
 arrangepeek :: Int -> ([Elem] -> [Elem]) -> Cmd ()
-arrangepeek = popnpush . peekn
+arrangepeek n f = peekn n >>= pushn . f
 
 unary :: (Elem -> Elem) -> Cmd ()
 unary f = pop >>= push . f
@@ -143,20 +154,22 @@ opcode OP_14                    = push 14
 opcode OP_15                    = push 15
 opcode OP_16                    = push 16
 -- Stack operations
-opcode OP_DROP                  = pop >> pure ()
-opcode OP_DUP                   = peek >>= push
-opcode OP_NIP                   = arrange 2 (\[x1, x2] -> [x2])
-opcode OP_OVER                  = arrangepeek 2 (\[x1, x2] -> [x2, x1])
-opcode OP_ROT                   = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
-opcode OP_SWAP                  = arrange 2 (\[x1, x2] -> [x2, x1])
-opcode OP_TUCK                  = arrange 2 (\[x1, x2] -> [x2, x1, x2])
 opcode OP_2DROP                 = pop >> pop >> pure ()
-opcode OP_2DUP                  = arrangepeek 2 (\[x1, x2] -> [x2, x1, x2])
-opcode OP_3DUP = arrangepeek 3 (\[x1, x2, x3] -> [x2, x3, x1, x2, x3])
-opcode OP_2OVER = arrangepeek 4 (\[x1, x2, x3, x4] -> [x2, x3, x4, x1, x2])
+opcode OP_2DUP                  = arrangepeek 2 (\[x1, x2] -> [x1, x2])
+opcode OP_3DUP                  = arrangepeek 3 (\[x1, x2, x3] -> [x1, x2, x3])
+opcode OP_2OVER                 = arrangepeek 4 (\[x1, x2, x3, x4] -> [x1, x2])
 opcode OP_2ROT =
   arrange 6 (\[x1, x2, x3, x4, x5, x6] -> [x3, x4, x5, x6, x1, x2])
 opcode OP_2SWAP     = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
+opcode OP_IFDUP     = peek >>= \x1 -> when (x1 /= 0) (push x1)
+opcode OP_DEPTH     = stacksize >>= push
+opcode OP_DROP      = pop >> pure ()
+opcode OP_DUP       = peek >>= push
+opcode OP_NIP       = arrange 2 (\[x1, x2] -> [x2])
+opcode OP_OVER      = arrangepeek 2 (\[x1, x2] -> [x1])
+opcode OP_ROT       = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
+opcode OP_SWAP      = arrange 2 (\[x1, x2] -> [x2, x1])
+opcode OP_TUCK      = arrange 2 (\[x1, x2] -> [x2, x1, x2])
 -- Bitwise logic
 opcode OP_INVERT    = unary complement
 opcode OP_AND       = binary (.&.)
