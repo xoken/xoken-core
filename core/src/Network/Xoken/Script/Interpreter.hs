@@ -23,7 +23,7 @@ import           Control.Monad.Free             ( Free(Pure, Free)
                                                 )
 import           Network.Xoken.Script.Common
 
-type Elem = Integer
+type Elem = BS.ByteString
 type Stack = Seq.Seq Elem
 type InterpreterResult = (Stack, Maybe InterpreterError)
 
@@ -69,7 +69,7 @@ interpretCmd (Free (PeekN n k)) stack
   | otherwise        = (stack, Just StackUnderflow)
   where topn = Seq.take n stack
 interpretCmd (Free (StackSize k)) stack =
-  interpretCmd (k $ fromIntegral $ length stack) stack
+  interpretCmd (k $ S.encode $ length stack) stack
 interpretCmd (Free (Terminate e)) stack = (stack, Just e)
 
 terminate :: InterpreterError -> Cmd ()
@@ -112,47 +112,46 @@ binary f = do
   push $ f x1 x2
 
 truth :: Bool -> Elem
-truth True = 1
-truth _    = 0
+truth x = S.encode (if x then 1 else 0 :: Int)
 
 btruth :: (a1 -> a2 -> Bool) -> a1 -> a2 -> Elem
 btruth = ((truth .) .)
 
-pushdata n bs = case (S.decode bs1, S.decode bs2) of
-  (Right bytes, Right x) -> if fromIntegral bytes <= BS.length bs2
-    then push x
+pushint :: Int -> Cmd ()
+pushint = push . S.encode
+
+pushdata :: Int -> BS.ByteString -> Cmd ()
+pushdata n bs = case S.decode bs1 of
+  Right bytes -> if fromIntegral bytes <= BS.length bs2
+    then push bs2
     else terminate $ NotEnoughBytes { expected = bytes, actual = BS.length bs2 }
-  (Right bytes, Left msg) ->
-    terminate $ NotEnoughBytes { expected = bytes, actual = BS.length bs2 }
-  _ -> terminate $ NoDecoding { length_bytes = n, bytestring = bs }
+  _ -> terminate $ NoDecoding { length_bytes = n, bytestring = bs1 }
   where (bs1, bs2) = BS.splitAt n bs
 
 opcode :: ScriptOp -> Cmd ()
 -- Pushing Data
-opcode (OP_PUSHDATA bs OPCODE) = case S.decode bs of
-  Right x -> push x
-  _       -> push 0
+opcode (OP_PUSHDATA bs OPCODE ) = push bs
 opcode (OP_PUSHDATA bs OPDATA1) = pushdata 1 bs
 opcode (OP_PUSHDATA bs OPDATA2) = pushdata 2 bs
 opcode (OP_PUSHDATA bs OPDATA4) = pushdata 4 bs
-opcode OP_0                     = push 0
-opcode OP_1NEGATE               = push (-1)
-opcode OP_1                     = push 1
-opcode OP_2                     = push 2
-opcode OP_3                     = push 3
-opcode OP_4                     = push 4
-opcode OP_5                     = push 5
-opcode OP_6                     = push 6
-opcode OP_7                     = push 7
-opcode OP_8                     = push 8
-opcode OP_9                     = push 9
-opcode OP_10                    = push 10
-opcode OP_11                    = push 11
-opcode OP_12                    = push 12
-opcode OP_13                    = push 13
-opcode OP_14                    = push 14
-opcode OP_15                    = push 15
-opcode OP_16                    = push 16
+opcode OP_0                     = pushint 0
+opcode OP_1NEGATE               = pushint (-1)
+opcode OP_1                     = pushint 1
+opcode OP_2                     = pushint 2
+opcode OP_3                     = pushint 3
+opcode OP_4                     = pushint 4
+opcode OP_5                     = pushint 5
+opcode OP_6                     = pushint 6
+opcode OP_7                     = pushint 7
+opcode OP_8                     = pushint 8
+opcode OP_9                     = pushint 9
+opcode OP_10                    = pushint 10
+opcode OP_11                    = pushint 11
+opcode OP_12                    = pushint 12
+opcode OP_13                    = pushint 13
+opcode OP_14                    = pushint 14
+opcode OP_15                    = pushint 15
+opcode OP_16                    = pushint 16
 -- Stack operations
 opcode OP_2DROP                 = pop >> pop >> pure ()
 opcode OP_2DUP                  = arrangepeek 2 (\[x1, x2] -> [x1, x2])
@@ -160,23 +159,30 @@ opcode OP_3DUP                  = arrangepeek 3 (\[x1, x2, x3] -> [x1, x2, x3])
 opcode OP_2OVER                 = arrangepeek 4 (\[x1, x2, x3, x4] -> [x1, x2])
 opcode OP_2ROT =
   arrange 6 (\[x1, x2, x3, x4, x5, x6] -> [x3, x4, x5, x6, x1, x2])
-opcode OP_2SWAP     = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
-opcode OP_IFDUP     = peek >>= \x1 -> when (x1 /= 0) (push x1)
-opcode OP_DEPTH     = stacksize >>= push
-opcode OP_DROP      = pop >> pure ()
-opcode OP_DUP       = peek >>= push
-opcode OP_NIP       = arrange 2 (\[x1, x2] -> [x2])
-opcode OP_OVER      = arrangepeek 2 (\[x1, x2] -> [x1])
-opcode OP_ROT       = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
-opcode OP_SWAP      = arrange 2 (\[x1, x2] -> [x2, x1])
-opcode OP_TUCK      = arrange 2 (\[x1, x2] -> [x2, x1, x2])
+opcode OP_2SWAP   = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
+opcode OP_IFDUP   = peek >>= \x1 -> when (x1 /= BS.singleton 0) (push x1)
+opcode OP_DEPTH   = stacksize >>= push
+opcode OP_DROP    = pop >> pure ()
+opcode OP_DUP     = peek >>= push
+opcode OP_NIP     = arrange 2 (\[x1, x2] -> [x2])
+opcode OP_OVER    = arrangepeek 2 (\[x1, x2] -> [x1])
+opcode OP_ROT     = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
+opcode OP_SWAP    = arrange 2 (\[x1, x2] -> [x2, x1])
+opcode OP_TUCK    = arrange 2 (\[x1, x2] -> [x2, x1, x2])
+-- Data manipulation
+opcode OP_CAT     = binary BS.append
+opcode OP_SPLIT   = terminate (Unimplemented OP_SPLIT)
+opcode OP_NUM2BIN = terminate (Unimplemented OP_NUM2BIN)
+opcode OP_BIN2NUM = terminate (Unimplemented OP_BIN2NUM)
+opcode OP_SIZE    = peek >>= \bs -> pushint $ BS.length bs
 -- Bitwise logic
-opcode OP_INVERT    = unary complement
-opcode OP_AND       = binary (.&.)
-opcode OP_OR        = binary (.|.)
-opcode OP_XOR       = binary xor
-opcode OP_EQUAL     = binary undefined
+opcode OP_INVERT  = unary (BS.map complement)
+opcode OP_AND     = binary ((BS.pack .) . BS.zipWith (.&.))
+opcode OP_OR      = binary ((BS.pack .) . BS.zipWith (.|.))
+opcode OP_XOR     = binary ((BS.pack .) . BS.zipWith xor)
+opcode OP_EQUAL   = binary (btruth (==))
 -- Arithmetic
+{-
 opcode OP_1ADD      = unary succ
 opcode OP_1SUB      = unary pred
 opcode OP_2MUL      = unary (flip shiftL 1)
@@ -211,5 +217,5 @@ opcode OP_GREATERTHANOREQUAL = binary (btruth (>=))
 opcode OP_MIN                = binary min
 opcode OP_MAX                = binary max
 opcode OP_WITHIN = arrange 3 (\[x, min, max] -> [truth (min <= x && x < max)])
-
-opcode scriptOp              = terminate (Unimplemented scriptOp)
+-}
+opcode scriptOp   = terminate (Unimplemented scriptOp)

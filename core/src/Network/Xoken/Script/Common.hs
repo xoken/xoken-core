@@ -140,9 +140,9 @@ data ScriptOp
     | OP_2OVER
     | OP_2ROT
     | OP_2SWAP
-      -- Splice
+      -- Data manipulation
     | OP_CAT
-    | OP_SUBSTR
+    | OP_SPLIT
     | OP_NUM2BIN
     | OP_BIN2NUM
     | OP_SIZE
@@ -280,9 +280,9 @@ instance Serialize ScriptOp where
             | op == 0x7b = return OP_ROT
             | op == 0x7c = return OP_SWAP
             | op == 0x7d = return OP_TUCK
-            -- Splice
+            -- Data manipulation
             | op == 0x7e = return OP_CAT
-            | op == 0x7f = return OP_SUBSTR
+            | op == 0x7f = return OP_SPLIT
             | op == 0x80 = return OP_NUM2BIN
             | op == 0x81 = return OP_BIN2NUM
             | op == 0x82 = return OP_SIZE
@@ -426,9 +426,9 @@ instance Serialize ScriptOp where
             OP_ROT -> putWord8 0x7b
             OP_SWAP -> putWord8 0x7c
             OP_TUCK -> putWord8 0x7d
-        -- Splice
+        -- Data manipulation
             OP_CAT -> putWord8 0x7e
-            OP_SUBSTR -> putWord8 0x7f
+            OP_SPLIT -> putWord8 0x7f
             OP_NUM2BIN -> putWord8 0x80
             OP_BIN2NUM -> putWord8 0x81
             OP_SIZE -> putWord8 0x82
