@@ -30,7 +30,7 @@ data InterpreterError
   = StackUnderflow
   | NoDecoding {length_bytes :: Int, bytestring :: BS.ByteString}
   | NotEnoughBytes {expected :: Word8, actual :: Int}
-  | TooMuchToLShift Integer
+  | TooMuchToLShift BN
   | ConversionError
   | Unimplemented ScriptOp
   | Message String
@@ -114,15 +114,18 @@ unary :: (Elem -> Elem) -> Cmd ()
 unary f = pop >>= push . f
 
 binary :: (Elem -> Elem -> Elem) -> Cmd ()
-binary f = do
-  x2 <- pop
-  x1 <- pop
-  push $ f x1 x2
+binary f = popn 2 >>= \[x1, x2] -> push $ f x1 x2
 
-truth :: Bool -> Elem
-truth x = S.encode (if x then 1 else 0 :: Int)
+unaryarith :: (BN -> BN) -> Cmd ()
+unaryarith f = pop >>= num >>= bin . f >>= push
 
-btruth :: (a1 -> a2 -> Bool) -> a1 -> a2 -> Elem
+binaryarith :: (BN -> BN -> BN) -> Cmd ()
+binaryarith f = popn 2 >>= arith >>= \[x1, x2] -> bin (f x1 x2) >>= push
+
+truth :: Bool -> BN
+truth x = BN $ if x then 1 else 0
+
+btruth :: (a1 -> a2 -> Bool) -> a1 -> a2 -> BN
 btruth = ((truth .) .)
 
 arith :: [Elem] -> Cmd [BN]
@@ -189,48 +192,53 @@ opcode OP_NUM2BIN =
     >>= (\[x1, x2] -> maybe (terminate ConversionError) push (num2bin x1 x2))
 opcode OP_BIN2NUM =
   pop >>= maybe (terminate ConversionError) ((>>= push) . bin) . bin2num
-opcode OP_SIZE   = peek >>= \bs -> pushint $ BS.length bs
+opcode OP_SIZE      = peek >>= pushint . BS.length
 -- Bitwise logic
-opcode OP_INVERT = unary (BS.map complement)
-opcode OP_AND    = binary ((BS.pack .) . BS.zipWith (.&.))
-opcode OP_OR     = binary ((BS.pack .) . BS.zipWith (.|.))
-opcode OP_XOR    = binary ((BS.pack .) . BS.zipWith xor)
-opcode OP_EQUAL  = binary (btruth (==))
+opcode OP_INVERT    = unary (BS.map complement)
+opcode OP_AND       = binary ((BS.pack .) . BS.zipWith (.&.))
+opcode OP_OR        = binary ((BS.pack .) . BS.zipWith (.|.))
+opcode OP_XOR       = binary ((BS.pack .) . BS.zipWith xor)
+opcode OP_EQUAL     = popn 2 >>= (\[x1, x2] -> bin $ truth $ x1 == x2) >>= push
 -- Arithmetic
-{-
-opcode OP_1ADD      = pop >>= \x1 -> arith [x1] >> push $ succ x1
-opcode OP_1SUB      = unary pred
-opcode OP_2MUL      = unary (flip shiftL 1)
-opcode OP_2DIV      = unary (flip shiftR 1)
-opcode OP_NEGATE    = unary negate
-opcode OP_ABS       = unary abs
-opcode OP_NOT       = unary (truth . (== 0))
-opcode OP_0NOTEQUAL = unary (truth . (/= 0))
-opcode OP_ADD       = binary (+)
-opcode OP_SUB       = binary (-)
-opcode OP_MUL       = binary (*)
-opcode OP_DIV       = binary div
-opcode OP_MOD       = binary mod
-opcode OP_LSHIFT    = do
-  b <- pop
-  a <- pop
-  if b <= toInteger (maxBound :: Int)
-    then push $ shiftL a (fromIntegral b)
-    else terminate $ TooMuchToLShift b
-opcode OP_RSHIFT = binary
-  (\a b ->
-    if b <= toInteger (maxBound :: Int) then shiftR a (fromIntegral b) else 0
-  )
-opcode OP_BOOLAND            = binary (\a b -> truth (a /= 0 && b /= 0))
-opcode OP_BOOLOR             = binary (\a b -> truth (a /= 0 || b /= 0))
-opcode OP_NUMEQUAL           = binary (btruth (==))
-opcode OP_NUMNOTEQUAL        = binary (btruth (/=))
-opcode OP_LESSTHAN           = binary (btruth (<))
-opcode OP_GREATERTHAN        = binary (btruth (>))
-opcode OP_LESSTHANOREQUAL    = binary (btruth (<=))
-opcode OP_GREATERTHANOREQUAL = binary (btruth (>=))
-opcode OP_MIN                = binary min
-opcode OP_MAX                = binary max
-opcode OP_WITHIN = arrange 3 (\[x, min, max] -> [truth (min <= x && x < max)])
--}
-opcode scriptOp  = terminate (Unimplemented scriptOp)
+opcode OP_1ADD      = unaryarith succ
+opcode OP_1SUB      = unaryarith pred
+opcode OP_2MUL      = unaryarith (flip shiftL 1)
+opcode OP_2DIV      = unaryarith (flip shiftR 1)
+opcode OP_NEGATE    = unaryarith negate
+opcode OP_ABS       = unaryarith abs
+opcode OP_NOT       = unaryarith (truth . (== 0))
+opcode OP_0NOTEQUAL = unaryarith (truth . (/= 0))
+opcode OP_ADD       = binaryarith (+)
+opcode OP_SUB       = binaryarith (-)
+opcode OP_MUL       = binaryarith (*)
+opcode OP_DIV       = binaryarith div
+opcode OP_MOD       = binaryarith mod
+opcode OP_LSHIFT    = popn 2 >>= arith >>= \[x1, x2] ->
+  if x2 <= BN (toInteger (maxBound :: Int))
+    then push =<< bin (shiftL x1 (fromIntegral x2))
+    else terminate $ TooMuchToLShift x2
+opcode OP_RSHIFT =
+  popn 2
+    >>= arith
+    >>= (\[x1, x2] -> bin $ if x2 <= BN (toInteger (maxBound :: Int))
+          then shiftR x1 (fromIntegral x2)
+          else 0
+        )
+    >>= push
+opcode OP_BOOLAND            = binaryarith (\a b -> truth (a /= 0 && b /= 0))
+opcode OP_BOOLOR             = binaryarith (\a b -> truth (a /= 0 || b /= 0))
+opcode OP_NUMEQUAL           = binaryarith (btruth (==))
+opcode OP_NUMNOTEQUAL        = binaryarith (btruth (/=))
+opcode OP_LESSTHAN           = binaryarith (btruth (<))
+opcode OP_GREATERTHAN        = binaryarith (btruth (>))
+opcode OP_LESSTHANOREQUAL    = binaryarith (btruth (<=))
+opcode OP_GREATERTHANOREQUAL = binaryarith (btruth (>=))
+opcode OP_MIN                = binaryarith min
+opcode OP_MAX                = binaryarith max
+opcode OP_WITHIN =
+  popn 3
+    >>= arith
+    >>= (\[x, min, max] -> bin $ truth $ min <= x && x < max)
+    >>= push
+
+opcode scriptOp = terminate (Unimplemented scriptOp)
