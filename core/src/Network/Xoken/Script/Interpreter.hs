@@ -2,6 +2,7 @@
 
 module Network.Xoken.Script.Interpreter where
 
+import           Data.Maybe                     ( maybe )
 import           Data.Foldable                  ( toList )
 import           Data.Word                      ( Word8 )
 import           Data.Bits                      ( complement
@@ -14,14 +15,12 @@ import           Data.Bits                      ( complement
 import qualified Data.ByteString               as BS
 import qualified Data.Serialize                as S
 import qualified Data.Sequence                 as Seq
-import           Control.Monad                  ( sequence_
-                                                , replicateM
-                                                , when
-                                                )
+import           Control.Monad
 import           Control.Monad.Free             ( Free(Pure, Free)
                                                 , liftF
                                                 )
 import           Network.Xoken.Script.Common
+import           Network.Xoken.Script.OpenSSL_BN
 
 type Elem = BS.ByteString
 type Stack = Seq.Seq Elem
@@ -32,6 +31,7 @@ data InterpreterError
   | NoDecoding {length_bytes :: Int, bytestring :: BS.ByteString}
   | NotEnoughBytes {expected :: Word8, actual :: Int}
   | TooMuchToLShift Integer
+  | ConversionError
   | Unimplemented ScriptOp
   | Message String
   deriving (Show, Eq)
@@ -44,6 +44,8 @@ data InterpreterCommands a
     | PopN Int ([Elem] -> a)
     | PeekN Int ([Elem] -> a)
     | StackSize (Elem -> a)
+    | Num Elem (BN -> a)
+    | Bin BN (Elem -> a)
     deriving (Functor)
 
 type Cmd = Free InterpreterCommands
@@ -71,6 +73,12 @@ interpretCmd (Free (PeekN n k)) stack
 interpretCmd (Free (StackSize k)) stack =
   interpretCmd (k $ S.encode $ length stack) stack
 interpretCmd (Free (Terminate e)) stack = (stack, Just e)
+
+num :: Elem -> Cmd BN
+num x = liftF (Num x id)
+
+bin :: BN -> Cmd Elem
+bin n = liftF (Bin n id)
 
 terminate :: InterpreterError -> Cmd ()
 terminate e = liftF (Terminate e)
@@ -117,6 +125,9 @@ truth x = S.encode (if x then 1 else 0 :: Int)
 btruth :: (a1 -> a2 -> Bool) -> a1 -> a2 -> Elem
 btruth = ((truth .) .)
 
+arith :: [Elem] -> Cmd [BN]
+arith = mapM num
+
 pushint :: Int -> Cmd ()
 pushint = push . S.encode
 
@@ -159,31 +170,35 @@ opcode OP_3DUP                  = arrangepeek 3 (\[x1, x2, x3] -> [x1, x2, x3])
 opcode OP_2OVER                 = arrangepeek 4 (\[x1, x2, x3, x4] -> [x1, x2])
 opcode OP_2ROT =
   arrange 6 (\[x1, x2, x3, x4, x5, x6] -> [x3, x4, x5, x6, x1, x2])
-opcode OP_2SWAP   = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
-opcode OP_IFDUP   = peek >>= \x1 -> when (x1 /= BS.singleton 0) (push x1)
-opcode OP_DEPTH   = stacksize >>= push
-opcode OP_DROP    = pop >> pure ()
-opcode OP_DUP     = peek >>= push
-opcode OP_NIP     = arrange 2 (\[x1, x2] -> [x2])
-opcode OP_OVER    = arrangepeek 2 (\[x1, x2] -> [x1])
-opcode OP_ROT     = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
-opcode OP_SWAP    = arrange 2 (\[x1, x2] -> [x2, x1])
-opcode OP_TUCK    = arrange 2 (\[x1, x2] -> [x2, x1, x2])
+opcode OP_2SWAP = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
+opcode OP_IFDUP = peek >>= \x1 -> when (x1 /= BS.singleton 0) (push x1)
+opcode OP_DEPTH = stacksize >>= push
+opcode OP_DROP  = pop >> pure ()
+opcode OP_DUP   = peek >>= push
+opcode OP_NIP   = arrange 2 (\[x1, x2] -> [x2])
+opcode OP_OVER  = arrangepeek 2 (\[x1, x2] -> [x1])
+opcode OP_ROT   = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
+opcode OP_SWAP  = arrange 2 (\[x1, x2] -> [x2, x1])
+opcode OP_TUCK  = arrange 2 (\[x1, x2] -> [x2, x1, x2])
 -- Data manipulation
-opcode OP_CAT     = binary BS.append
-opcode OP_SPLIT   = terminate (Unimplemented OP_SPLIT)
-opcode OP_NUM2BIN = terminate (Unimplemented OP_NUM2BIN)
-opcode OP_BIN2NUM = terminate (Unimplemented OP_BIN2NUM)
-opcode OP_SIZE    = peek >>= \bs -> pushint $ BS.length bs
+opcode OP_CAT   = binary BS.append
+opcode OP_SPLIT = terminate (Unimplemented OP_SPLIT)
+opcode OP_NUM2BIN =
+  popn 2
+    >>= arith
+    >>= (\[x1, x2] -> maybe (terminate ConversionError) push (num2bin x1 x2))
+opcode OP_BIN2NUM =
+  pop >>= maybe (terminate ConversionError) ((>>= push) . bin) . bin2num
+opcode OP_SIZE   = peek >>= \bs -> pushint $ BS.length bs
 -- Bitwise logic
-opcode OP_INVERT  = unary (BS.map complement)
-opcode OP_AND     = binary ((BS.pack .) . BS.zipWith (.&.))
-opcode OP_OR      = binary ((BS.pack .) . BS.zipWith (.|.))
-opcode OP_XOR     = binary ((BS.pack .) . BS.zipWith xor)
-opcode OP_EQUAL   = binary (btruth (==))
+opcode OP_INVERT = unary (BS.map complement)
+opcode OP_AND    = binary ((BS.pack .) . BS.zipWith (.&.))
+opcode OP_OR     = binary ((BS.pack .) . BS.zipWith (.|.))
+opcode OP_XOR    = binary ((BS.pack .) . BS.zipWith xor)
+opcode OP_EQUAL  = binary (btruth (==))
 -- Arithmetic
 {-
-opcode OP_1ADD      = unary succ
+opcode OP_1ADD      = pop >>= \x1 -> arith [x1] >> push $ succ x1
 opcode OP_1SUB      = unary pred
 opcode OP_2MUL      = unary (flip shiftL 1)
 opcode OP_2DIV      = unary (flip shiftR 1)
@@ -218,4 +233,4 @@ opcode OP_MIN                = binary min
 opcode OP_MAX                = binary max
 opcode OP_WITHIN = arrange 3 (\[x, min, max] -> [truth (min <= x && x < max)])
 -}
-opcode scriptOp   = terminate (Unimplemented scriptOp)
+opcode scriptOp  = terminate (Unimplemented scriptOp)
