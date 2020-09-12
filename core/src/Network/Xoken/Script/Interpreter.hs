@@ -72,6 +72,8 @@ interpretCmd (Free (PeekN n k)) stack
   where topn = Seq.take n stack
 interpretCmd (Free (StackSize k)) stack =
   interpretCmd (k $ S.encode $ length stack) stack
+interpretCmd (Free (Num x k)) stack = (stack, Just ConversionError)
+interpretCmd (Free (Bin n k)) stack = (stack, Just ConversionError) 
 interpretCmd (Free (Terminate e)) stack = (stack, Just e)
 
 num :: Elem -> Cmd BN
@@ -132,7 +134,7 @@ arith :: [Elem] -> Cmd [BN]
 arith = mapM num
 
 pushint :: Int -> Cmd ()
-pushint = push . S.encode
+pushint n = push =<< bin (BN $ fromIntegral n)
 
 pushdata :: Int -> BS.ByteString -> Cmd ()
 pushdata n bs = case S.decode bs1 of
@@ -174,7 +176,7 @@ opcode OP_2OVER                 = arrangepeek 4 (\[x1, x2, x3, x4] -> [x1, x2])
 opcode OP_2ROT =
   arrange 6 (\[x1, x2, x3, x4, x5, x6] -> [x3, x4, x5, x6, x1, x2])
 opcode OP_2SWAP = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
-opcode OP_IFDUP = peek >>= \x1 -> when (x1 /= BS.singleton 0) (push x1)
+opcode OP_IFDUP = peek >>= \x1 -> num x1 >>= \n -> when (n /= BN 0) (push x1)
 opcode OP_DEPTH = stacksize >>= push
 opcode OP_DROP  = pop >> pure ()
 opcode OP_DUP   = peek >>= push
