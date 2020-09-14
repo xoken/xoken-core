@@ -21,6 +21,10 @@ spec = do
     it "returns [2] given [OP_1, OP_2, OP_NIP]" $ test [OP_1, OP_2, OP_NIP] [2]
     it "returns [1, 2, 1] given [OP_1, OP_2, OP_OVER]"
       $ test [OP_1, OP_2, OP_OVER] [1, 2, 1]
+    it "returns [1] given [OP_1, OP_TOALTSTACK, OP_FROMALTSTACK]"
+      $ test [OP_1, OP_TOALTSTACK, OP_FROMALTSTACK] [1]
+    it "returns [1, 2] given [OP_1, OP_TOALTSTACK, OP_2, OP_FROMALTSTACK]"
+      $ test [OP_1, OP_TOALTSTACK, OP_2, OP_FROMALTSTACK] [1, 2]
     {-
     it "returns [3] given [OP_1, OP_2, OP_ADD]" $ test [OP_1, OP_2, OP_ADD] [3]
     it "returns [-1] given [OP_3, OP_4, OP_SUB]"

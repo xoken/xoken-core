@@ -57,6 +57,8 @@ data InterpreterCommands a
     | PopN Int ([Elem] -> a)
     | PeekN Int ([Elem] -> a)
     | StackSize (Elem -> a)
+    | PushAlt Elem a
+    | PopAlt (Elem -> a)
     | Num Elem (BN -> a)
     | Bin BN (Elem -> a)
     | PushBranch Branch a
@@ -109,6 +111,11 @@ interpretCmd (Free (StackSize k)) e =
   case num2bin (BN $ fromIntegral $ length $ stack e) (BN 4) of
     Just n -> interpretCmd (k n) e
     _      -> (e, Just ConversionError)
+interpretCmd (Free (PushAlt x m)) e =
+  interpretCmd m (e { alt_stack = x Seq.<| alt_stack e })
+interpretCmd (Free (PopAlt k)) e = case Seq.viewl (alt_stack e) of
+  x Seq.:< rest -> interpretCmd (k x) (e { alt_stack = rest })
+  _             -> (e, Just StackUnderflow)
 interpretCmd (Free (Num x k)) e = case S.decode x of
   Right n -> interpretCmd (k n) e
   _       -> (e, Just ConversionError)
@@ -123,6 +130,12 @@ interpretCmd (Free (Terminate error)) e = (e, Just error)
 
 markinvalid :: Cmd ()
 markinvalid = liftF MarkInvalid
+
+pushalt :: Elem -> Cmd ()
+pushalt x = liftF (PushAlt x ())
+
+popalt :: Cmd Elem
+popalt = liftF (PopAlt id)
 
 pushbranch :: Branch -> Cmd ()
 pushbranch b = liftF (PushBranch b ())
@@ -235,14 +248,16 @@ opcode OP_ELSE     = popbranch >>= \b -> if is_else_branch b
   then terminate InvalidBranch
   else pushbranch
     (Branch { satisfied = not $ satisfied b, is_else_branch = True })
-opcode OP_ENDIF  = popbranch >> pure ()
-opcode OP_VERIFY = pop >>= num >>= \x -> when (x == 0) markinvalid
-opcode OP_RETURN = terminate (Unimplemented OP_RETURN)
+opcode OP_ENDIF        = popbranch >> pure ()
+opcode OP_VERIFY       = pop >>= num >>= \x -> when (x == 0) markinvalid
+opcode OP_RETURN       = terminate (Unimplemented OP_RETURN)
 -- Stack operations
-opcode OP_2DROP  = pop >> pop >> pure ()
-opcode OP_2DUP   = arrangepeek 2 (\[x1, x2] -> [x1, x2])
-opcode OP_3DUP   = arrangepeek 3 (\[x1, x2, x3] -> [x1, x2, x3])
-opcode OP_2OVER  = arrangepeek 4 (\[x1, x2, x3, x4] -> [x1, x2])
+opcode OP_TOALTSTACK   = pop >>= pushalt
+opcode OP_FROMALTSTACK = popalt >>= push
+opcode OP_2DROP        = pop >> pop >> pure ()
+opcode OP_2DUP         = arrangepeek 2 (\[x1, x2] -> [x1, x2])
+opcode OP_3DUP         = arrangepeek 3 (\[x1, x2, x3] -> [x1, x2, x3])
+opcode OP_2OVER        = arrangepeek 4 (\[x1, x2, x3, x4] -> [x1, x2])
 opcode OP_2ROT =
   arrange 6 (\[x1, x2, x3, x4, x5, x6] -> [x3, x4, x5, x6, x1, x2])
 opcode OP_2SWAP = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
