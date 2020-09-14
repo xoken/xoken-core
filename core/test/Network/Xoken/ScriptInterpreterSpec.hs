@@ -9,6 +9,7 @@ import qualified Data.Sequence                 as Seq
 import           Test.Hspec
 import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.Interpreter
+import           Network.Xoken.Script.OpenSSL_BN
 
 spec :: Spec
 spec = do
@@ -35,19 +36,19 @@ spec = do
   describe "interpret failure" $ do
     it "returns StackUnderflow given [OP_DROP]"
       $          interpret (Script [OP_DROP])
-      `shouldBe` (Seq.empty, Just StackUnderflow)
+      `shouldBe` (empty_env, Just StackUnderflow)
     it "returns NoDecoding given [OP_PUSHDATA BS.empty OPDATA1]"
       $          interpret (Script [OP_PUSHDATA BS.empty OPDATA1])
-      `shouldBe` (Seq.empty, Just $ NoDecoding 1 BS.empty)
+      `shouldBe` (empty_env, Just $ NoDecoding 1 BS.empty)
     it "returns NoDecoding given [OP_PUSHDATA BS.empty OPDATA2]"
       $          interpret (Script [OP_PUSHDATA BS.empty OPDATA2])
-      `shouldBe` (Seq.empty, Just $ NoDecoding 2 BS.empty)
+      `shouldBe` (empty_env, Just $ NoDecoding 2 BS.empty)
     it "returns NoDecoding given [OP_PUSHDATA BS.empty OPDATA4]"
       $          interpret (Script [OP_PUSHDATA BS.empty OPDATA4])
-      `shouldBe` (Seq.empty, Just $ NoDecoding 4 BS.empty)
+      `shouldBe` (empty_env, Just $ NoDecoding 4 BS.empty)
     it "returns NotEnoughBytes given [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1]"
       $          interpret (Script [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1])
-      `shouldBe` (Seq.empty, Just $ NotEnoughBytes { expected = 2, actual = 1 })
+      `shouldBe` (empty_env, Just $ NotEnoughBytes { expected = 2, actual = 1 })
     {-
     it
         "returns TooMuchToLShift given\
@@ -66,8 +67,17 @@ spec = do
                    )
       `shouldBe` (Seq.empty, Just $ TooMuchToLShift (2 ^ 63))
     -}
+  describe "interpret control flow" $ do
+    it "returns [2] given [OP_0, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF]"
+      $          interpret (Script [OP_0, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF])
+      `shouldBe` (empty_env { stack = Seq.singleton $ int2bin $ 2 }, Nothing)
+    it "returns [1] given [OP_1, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF]"
+      $          interpret (Script [OP_1, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF])
+      `shouldBe` (empty_env { stack = Seq.singleton $ int2bin $ 2 }, Nothing)
 
 test :: [ScriptOp] -> [Int] -> Expectation
 test ops expected_elems =
   interpret (Script ops)
-    `shouldBe` (Seq.fromList $ S.encode <$> expected_elems, Nothing)
+    `shouldBe` ( empty_env { stack = Seq.fromList $ int2bin <$> expected_elems }
+               , Nothing
+               )
