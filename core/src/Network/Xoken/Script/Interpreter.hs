@@ -1,12 +1,6 @@
-{-# LANGUAGE DeriveFunctor #-}
-
 module Network.Xoken.Script.Interpreter where
 
 import           Data.Maybe                     ( maybe )
-import           Data.Foldable                  ( toList )
-import           Data.Word                      ( Word8
-                                                , Word32
-                                                )
 import           Data.Bits                      ( complement
                                                 , (.&.)
                                                 , (.|.)
@@ -14,74 +8,17 @@ import           Data.Bits                      ( complement
                                                 , shiftL
                                                 , shiftR
                                                 )
+import           Control.Monad                  ( sequence_
+                                                , when
+                                                )
 import qualified Data.ByteString               as BS
 import qualified Data.Serialize                as S
 import qualified Data.Sequence                 as Seq
-import           Control.Monad
-import           Control.Monad.Free             ( Free(Pure, Free)
-                                                , liftF
-                                                )
 import           Network.Xoken.Script.Common
-import           Network.Xoken.Script.OpenSSL_BN
+import           Network.Xoken.Script.Interpreter.Commands
+import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
-type Elem = BS.ByteString
-type Stack a = Seq.Seq a
-type InterpreterResult = (Env, Maybe InterpreterError)
-
-data Env = Env
-  { stack :: Stack Elem
-  , alt_stack :: Stack Elem
-  , branch_stack :: Stack Branch
-  , marked_invalid :: Bool
-  } deriving (Show, Eq)
-
-data Branch = Branch
-  { satisfied :: Bool
-  , is_else_branch :: Bool
-  } deriving (Show, Eq)
-
-data InterpreterError
-  = StackUnderflow
-  | NoDecoding {length_bytes :: Int, bytestring :: BS.ByteString}
-  | NotEnoughBytes {expected :: Word8, actual :: Int}
-  | TooMuchToLShift BN
-  | ConversionError
-  | Unimplemented ScriptOp
-  | Message String
-  | UnbalancedConditional
-  | InvalidAltstackOperation
-  | NotWord32Bounds
-  deriving (Show, Eq)
-
-data InterpreterCommands a
-    = Terminate InterpreterError
-    | Push Elem a
-    | Pop (Elem -> a)
-    | Peek (Elem -> a)
-    | PopN Int ([Elem] -> a)
-    | PopNth Word32 (Elem -> a)
-    | PeekN Int ([Elem] -> a)
-    | PeekNth Word32 (Elem -> a)
-    | StackSize (Elem -> a)
-    | PushAlt Elem a
-    | PopAlt (Elem -> a)
-    | Num Elem (BN -> a)
-    | Bin BN (Elem -> a)
-    | PushBranch Branch a
-    | PopBranch (Branch -> a)
-    | MarkInvalid
-    | Num2u32 BN (Word32 -> a)
-    deriving (Functor)
-
-type Cmd = Free InterpreterCommands
-
-empty_env = Env { stack          = Seq.empty
-                , alt_stack      = Seq.empty
-                , branch_stack   = Seq.empty
-                , marked_invalid = False
-                }
-
-interpret :: Script -> InterpreterResult
+interpret :: Script -> (Env, Maybe InterpreterError)
 interpret script = go (scriptOps script) empty_env where
   go (op : rest) e = case Seq.viewl (branch_stack e) of
     Branch { satisfied = False } Seq.:< _ -> case op of
@@ -95,148 +32,11 @@ interpret script = go (scriptOps script) empty_env where
       r             -> r
   go [] e = (e, Nothing)
 
-rindex :: Int -> Env -> Int
-rindex i e = length (stack e) - 1 - i
-
-interpretCmd :: Cmd () -> Env -> InterpreterResult
-interpretCmd (Pure ()) e = (e, Nothing)
-interpretCmd (Free (Push x m)) e =
-  interpretCmd m (e { stack = stack e Seq.|> x })
-interpretCmd (Free (Pop k)) e = case Seq.viewr (stack e) of
-  rest Seq.:> x -> interpretCmd (k x) (e { stack = rest })
-  _             -> (e, Just StackUnderflow)
-interpretCmd (Free (Peek k)) e = case Seq.viewr (stack e) of
-  _ Seq.:> x -> interpretCmd (k x) e
-  _          -> (e, Just StackUnderflow)
-interpretCmd (Free (PopN n k)) e
-  | length topn == n = interpretCmd (k $ toList topn) (e { stack = rest })
-  | otherwise        = (e, Just StackUnderflow)
-  where (rest, topn) = Seq.splitAt (rindex n e) (stack e)
-interpretCmd (Free (PopNth n k)) e = case stack e Seq.!? i of
-  Just x -> interpretCmd (k x) (e { stack = Seq.deleteAt i (stack e) })
-  _      -> (e, Just StackUnderflow)
-  where i = rindex (fromIntegral n) e
-interpretCmd (Free (PeekN n k)) e
-  | length topn == n = interpretCmd (k $ toList topn) e
-  | otherwise        = (e, Just StackUnderflow)
-  where topn = Seq.drop (rindex n e) (stack e)
-interpretCmd (Free (PeekNth n k)) e = case stack e Seq.!? i of
-  Just x -> interpretCmd (k x) e
-  _      -> (e, Just StackUnderflow)
-  where i = rindex (fromIntegral n) e
-interpretCmd (Free (StackSize k)) e =
-  interpretCmd (k $ int2bin $ length $ stack e) e
-interpretCmd (Free (PushAlt x m)) e =
-  interpretCmd m (e { alt_stack = x Seq.<| alt_stack e })
-interpretCmd (Free (PopAlt k)) e = case Seq.viewl (alt_stack e) of
-  x Seq.:< rest -> interpretCmd (k x) (e { alt_stack = rest })
-  _             -> (e, Just InvalidAltstackOperation)
-interpretCmd (Free (Num x k)) e = case S.decode x of
-  Right n -> interpretCmd (k n) e
-  _       -> (e, Just ConversionError)
-interpretCmd (Free (Bin n k)) e = interpretCmd (k $ S.encode n) e
-interpretCmd (Free (PushBranch b m)) e =
-  (e { branch_stack = b Seq.<| branch_stack e }, Nothing)
-interpretCmd (Free (PopBranch k)) e = case Seq.viewl (branch_stack e) of
-  b Seq.:< rest -> interpretCmd (k b) (e { branch_stack = rest })
-  _             -> (e, Just UnbalancedConditional)
-interpretCmd (Free MarkInvalid      ) e = (e { marked_invalid = True }, Nothing)
-interpretCmd (Free (Terminate error)) e = (e, Just error)
-interpretCmd (Free (Num2u32 n k    )) e = case num2u32 n of
-  Just u -> interpretCmd (k u) e
-  _      -> (e, Just NotWord32Bounds)
-
-popnth :: Word32 -> Cmd Elem
-popnth n = liftF (PopNth n id)
-
-peeknth :: Word32 -> Cmd Elem
-peeknth n = liftF (PeekNth n id)
-
-bn2u32 :: BN -> Cmd Word32
-bn2u32 n = liftF (Num2u32 n id)
-
-markinvalid :: Cmd ()
-markinvalid = liftF MarkInvalid
-
-pushalt :: Elem -> Cmd ()
-pushalt x = liftF (PushAlt x ())
-
-popalt :: Cmd Elem
-popalt = liftF (PopAlt id)
-
-pushbranch :: Branch -> Cmd ()
-pushbranch b = liftF (PushBranch b ())
-
-popbranch :: Cmd Branch
-popbranch = liftF (PopBranch id)
-
-num :: Elem -> Cmd BN
-num x = liftF (Num x id)
-
-bin :: BN -> Cmd Elem
-bin n = liftF (Bin n id)
-
-terminate :: InterpreterError -> Cmd ()
-terminate e = liftF (Terminate e)
-
-stacksize :: Cmd Elem
-stacksize = liftF (StackSize id)
-
-push :: Elem -> Cmd ()
-push x = liftF (Push x ())
-
-pop :: Cmd Elem
-pop = liftF (Pop id)
-
-peek :: Cmd Elem
-peek = liftF (Peek id)
-
-pushn :: [Elem] -> Cmd ()
-pushn = sequence_ . map push
-
-popn :: Int -> Cmd [Elem]
-popn n = liftF (PopN n id)
-
-peekn :: Int -> Cmd [Elem]
-peekn n = liftF (PeekN n id)
-
-arrange :: Int -> ([Elem] -> [Elem]) -> Cmd ()
-arrange n f = popn n >>= pushn . f
-
-arrangepeek :: Int -> ([Elem] -> [Elem]) -> Cmd ()
-arrangepeek n f = peekn n >>= pushn . f
-
-unary :: (Elem -> Elem) -> Cmd ()
-unary f = pop >>= push . f
-
-binary :: (Elem -> Elem -> Elem) -> Cmd ()
-binary f = popn 2 >>= \[x1, x2] -> push $ f x1 x2
-
-unaryarith :: (BN -> BN) -> Cmd ()
-unaryarith f = pop >>= num >>= bin . f >>= push
-
-binaryarith :: (BN -> BN -> BN) -> Cmd ()
-binaryarith f = popn 2 >>= arith >>= \[x1, x2] -> bin (f x1 x2) >>= push
-
-truth :: Bool -> BN
-truth x = BN $ if x then 1 else 0
-
-btruth :: (a1 -> a2 -> Bool) -> a1 -> a2 -> BN
-btruth = ((truth .) .)
-
-arith :: [Elem] -> Cmd [BN]
-arith = mapM num
-
-pushint :: Int -> Cmd ()
-pushint = push . int2bin
-
-pushdata :: Int -> BS.ByteString -> Cmd ()
-pushdata n bs = case S.decode bs1 of
-  Right bytes -> if fromIntegral bytes <= BS.length bs2
-    then push bs2
-    else terminate $ NotEnoughBytes { expected = bytes, actual = BS.length bs2 }
-  _ -> terminate $ NoDecoding { length_bytes = n, bytestring = bs1 }
-  where (bs1, bs2) = BS.splitAt n bs
+empty_env = Env { stack          = Seq.empty
+                , alt_stack      = Seq.empty
+                , branch_stack   = Seq.empty
+                , marked_invalid = False
+                }
 
 opcode :: ScriptOp -> Cmd ()
 -- Pushing Data
@@ -361,3 +161,44 @@ opcode OP_WITHIN =
     >>= (\[x, min, max] -> bin $ truth $ min <= x && x < max)
     >>= push
 opcode scriptOp = terminate (Unimplemented scriptOp)
+
+pushint :: Int -> Cmd ()
+pushint = push . int2bin
+
+pushn :: [Elem] -> Cmd ()
+pushn = sequence_ . map push
+
+pushdata :: Int -> BS.ByteString -> Cmd ()
+pushdata n bs = case S.decode bs1 of
+  Right bytes -> if fromIntegral bytes <= BS.length bs2
+    then push bs2
+    else terminate $ NotEnoughBytes { expected = bytes, actual = BS.length bs2 }
+  _ -> terminate $ NoDecoding { length_bytes = n, bytestring = bs1 }
+  where (bs1, bs2) = BS.splitAt n bs
+
+arrange :: Int -> ([Elem] -> [Elem]) -> Cmd ()
+arrange n f = popn n >>= pushn . f
+
+arrangepeek :: Int -> ([Elem] -> [Elem]) -> Cmd ()
+arrangepeek n f = peekn n >>= pushn . f
+
+unary :: (Elem -> Elem) -> Cmd ()
+unary f = pop >>= push . f
+
+binary :: (Elem -> Elem -> Elem) -> Cmd ()
+binary f = popn 2 >>= \[x1, x2] -> push $ f x1 x2
+
+arith :: [Elem] -> Cmd [BN]
+arith = mapM num
+
+unaryarith :: (BN -> BN) -> Cmd ()
+unaryarith f = pop >>= num >>= bin . f >>= push
+
+binaryarith :: (BN -> BN -> BN) -> Cmd ()
+binaryarith f = popn 2 >>= arith >>= \[x1, x2] -> bin (f x1 x2) >>= push
+
+truth :: Bool -> BN
+truth x = BN $ if x then 1 else 0
+
+btruth :: (a1 -> a2 -> Bool) -> a1 -> a2 -> BN
+btruth = ((truth .) .)

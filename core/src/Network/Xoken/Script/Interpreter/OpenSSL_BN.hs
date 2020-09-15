@@ -1,5 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module Network.Xoken.Script.OpenSSL_BN where
+module Network.Xoken.Script.Interpreter.OpenSSL_BN where
 
 import           Data.Word                      ( Word32 )
 import qualified Data.ByteString               as BS

@@ -4,12 +4,12 @@ module Network.Xoken.ScriptInterpreterSpec
 where
 
 import qualified Data.ByteString               as BS
-import qualified Data.Serialize                as S
 import qualified Data.Sequence                 as Seq
 import           Test.Hspec
 import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.Interpreter
-import           Network.Xoken.Script.OpenSSL_BN
+import           Network.Xoken.Script.Interpreter.Commands
+import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
 spec :: Spec
 spec = do
