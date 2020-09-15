@@ -46,7 +46,7 @@ data InterpreterError
   | ConversionError
   | Unimplemented ScriptOp
   | Message String
-  | InvalidBranch
+  | UnbalancedConditional
   deriving (Show, Eq)
 
 data InterpreterCommands a
@@ -107,10 +107,8 @@ interpretCmd (Free (PeekN n k)) e
   | length topn == n = interpretCmd (k $ reverse $ toList topn) e
   | otherwise        = (e, Just StackUnderflow)
   where topn = Seq.take n (stack e)
-interpretCmd (Free (StackSize k)) e =
-  case num2bin (BN $ fromIntegral $ length $ stack e) (BN 4) of
-    Just n -> interpretCmd (k n) e
-    _      -> (e, Just ConversionError)
+interpretCmd (Free (StackSize k)) e = interpretCmd (k $ S.encode $ n) e
+  where n = BN $ fromIntegral $ length $ stack e
 interpretCmd (Free (PushAlt x m)) e =
   interpretCmd m (e { alt_stack = x Seq.<| alt_stack e })
 interpretCmd (Free (PopAlt k)) e = case Seq.viewl (alt_stack e) of
@@ -124,7 +122,7 @@ interpretCmd (Free (PushBranch b m)) e =
   (e { branch_stack = b Seq.<| branch_stack e }, Nothing)
 interpretCmd (Free (PopBranch k)) e = case Seq.viewl (branch_stack e) of
   b Seq.:< rest -> interpretCmd (k b) (e { branch_stack = rest })
-  _             -> (e, Just StackUnderflow)
+  _             -> (e, Just UnbalancedConditional)
 interpretCmd (Free MarkInvalid      ) e = (e { marked_invalid = True }, Nothing)
 interpretCmd (Free (Terminate error)) e = (e, Just error)
 
@@ -238,14 +236,16 @@ opcode OP_16                    = pushint 16
 -- Flow control
 opcode OP_NOP                   = pure ()
 opcode OP_VER                   = terminate (Unimplemented OP_VER)
-opcode OP_IF                    = pop >>= num >>= \x ->
-  pushbranch (Branch { satisfied = x /= 0, is_else_branch = False })
+opcode OP_IF                    = stacksize >>= num >>= \s -> if s == 0
+  then terminate UnbalancedConditional
+  else pop >>= num >>= \x ->
+    pushbranch (Branch { satisfied = x /= 0, is_else_branch = False })
 opcode OP_NOTIF = pop >>= num >>= \x ->
   pushbranch (Branch { satisfied = x == 0, is_else_branch = False })
 opcode OP_VERIF    = terminate (Unimplemented OP_VERIF)
 opcode OP_VERNOTIF = terminate (Unimplemented OP_VERNOTIF)
 opcode OP_ELSE     = popbranch >>= \b -> if is_else_branch b
-  then terminate InvalidBranch
+  then terminate UnbalancedConditional
   else pushbranch
     (Branch { satisfied = not $ satisfied b, is_else_branch = True })
 opcode OP_ENDIF        = popbranch >> pure ()

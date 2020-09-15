@@ -53,6 +53,10 @@ spec = do
     it "returns NotEnoughBytes given [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1]"
       $          interpret (Script [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1])
       `shouldBe` (empty_env, Just $ NotEnoughBytes { expected = 2, actual = 1 })
+    unbalancedConditional [OP_IF]
+    unbalancedConditional [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
+    unbalancedConditional [OP_ELSE]
+    unbalancedConditional [OP_ENDIF]
     {-
     it
         "returns TooMuchToLShift given\
@@ -85,3 +89,9 @@ test ops expected_elems =
     `shouldBe` ( empty_env { stack = Seq.fromList $ int2bin <$> expected_elems }
                , Nothing
                )
+
+unbalancedConditional :: [ScriptOp] -> SpecWith (Arg Expectation)
+unbalancedConditional ops =
+  it ("returns UnbalancedConditional given " ++ show ops)
+    $          interpret (Script ops)
+    `shouldBe` (empty_env, Just UnbalancedConditional)

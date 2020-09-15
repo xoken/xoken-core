@@ -64,6 +64,7 @@ library
       Network.Xoken.Test.Util
       Network.Xoken.Transaction.Builder
       Network.Xoken.Script.Interpreter
+      Network.Xoken.Script.OpenSSL_BN
       Paths_xoken_core
   hs-source-dirs:
       src
@@ -152,6 +153,7 @@ test-suite spec
       Network.Xoken.Transaction.Common
       Network.Xoken.Util
       Network.Xoken.Script.Interpreter
+      Network.Xoken.Script.OpenSSL_BN
       Paths_xoken_core
   hs-source-dirs:
       test, src
