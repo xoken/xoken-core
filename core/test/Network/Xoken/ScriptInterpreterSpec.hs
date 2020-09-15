@@ -16,15 +16,24 @@ spec = do
   describe "interpret whole script" $ do
     it "returns [] given []" $ test [] []
     it "returns [1] given [OP_1]" $ test [OP_1] [1]
+    it "returns [1, 2] given [OP_1, OP_2]" $ test [OP_1, OP_2] [1, 2]
     it "returns [] given [OP_1, OP_DROP] " $ test [OP_1, OP_DROP] []
     it "returns [1, 1] given [OP_1, OP_DUP]" $ test [OP_1, OP_DUP] [1, 1]
     it "returns [2] given [OP_1, OP_2, OP_NIP]" $ test [OP_1, OP_2, OP_NIP] [2]
     it "returns [1, 2, 1] given [OP_1, OP_2, OP_OVER]"
       $ test [OP_1, OP_2, OP_OVER] [1, 2, 1]
+    it "returns [1, 1] given [OP_1, OP_0, OP_PICK]"
+      $ test [OP_1, OP_0, OP_PICK] [1, 1]
+    it "returns [1, 2, 1] given [OP_1, OP_2, OP_1, OP_PICK]"
+      $ test [OP_1, OP_2, OP_1, OP_PICK] [1, 2, 1]
+    it "returns [1, 1] given [OP_1, OP_0, OP_ROLL]"
+      $ test [OP_1, OP_0, OP_ROLL] [1]
+    it "returns [1, 2, 1] given [OP_1, OP_2, OP_1, OP_ROLL]"
+      $ test [OP_1, OP_2, OP_1, OP_ROLL] [2, 1]
     it "returns [1] given [OP_1, OP_TOALTSTACK, OP_FROMALTSTACK]"
       $ test [OP_1, OP_TOALTSTACK, OP_FROMALTSTACK] [1]
-    it "returns [1, 2] given [OP_1, OP_TOALTSTACK, OP_2, OP_FROMALTSTACK]"
-      $ test [OP_1, OP_TOALTSTACK, OP_2, OP_FROMALTSTACK] [1, 2]
+    it "returns [2, 1] given [OP_1, OP_TOALTSTACK, OP_2, OP_FROMALTSTACK]"
+      $ test [OP_1, OP_TOALTSTACK, OP_2, OP_FROMALTSTACK] [2, 1]
     {-
     it "returns [3] given [OP_1, OP_2, OP_ADD]" $ test [OP_1, OP_2, OP_ADD] [3]
     it "returns [-1] given [OP_3, OP_4, OP_SUB]"
@@ -84,7 +93,7 @@ spec = do
       `shouldBe` (empty_env { stack = Seq.singleton $ int2bin $ 2 }, Nothing)
     it "returns [1] given [OP_1, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF]"
       $          interpret (Script [OP_1, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF])
-      `shouldBe` (empty_env { stack = Seq.singleton $ int2bin $ 2 }, Nothing)
+      `shouldBe` (empty_env { stack = Seq.singleton $ int2bin $ 1 }, Nothing)
 
 test :: [ScriptOp] -> [Int] -> Expectation
 test ops expected_elems =

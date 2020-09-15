@@ -4,7 +4,9 @@ module Network.Xoken.Script.Interpreter where
 
 import           Data.Maybe                     ( maybe )
 import           Data.Foldable                  ( toList )
-import           Data.Word                      ( Word8 )
+import           Data.Word                      ( Word8
+                                                , Word32
+                                                )
 import           Data.Bits                      ( complement
                                                 , (.&.)
                                                 , (.|.)
@@ -48,6 +50,7 @@ data InterpreterError
   | Message String
   | UnbalancedConditional
   | InvalidAltstackOperation
+  | NotWord32Bounds
   deriving (Show, Eq)
 
 data InterpreterCommands a
@@ -56,7 +59,9 @@ data InterpreterCommands a
     | Pop (Elem -> a)
     | Peek (Elem -> a)
     | PopN Int ([Elem] -> a)
+    | PopNth Word32 (Elem -> a)
     | PeekN Int ([Elem] -> a)
+    | PeekNth Word32 (Elem -> a)
     | StackSize (Elem -> a)
     | PushAlt Elem a
     | PopAlt (Elem -> a)
@@ -65,6 +70,7 @@ data InterpreterCommands a
     | PushBranch Branch a
     | PopBranch (Branch -> a)
     | MarkInvalid
+    | Num2u32 BN (Word32 -> a)
     deriving (Functor)
 
 type Cmd = Free InterpreterCommands
@@ -89,27 +95,37 @@ interpret script = go (scriptOps script) empty_env where
       r             -> r
   go [] e = (e, Nothing)
 
+rindex :: Int -> Env -> Int
+rindex i e = length (stack e) - 1 - i
+
 interpretCmd :: Cmd () -> Env -> InterpreterResult
 interpretCmd (Pure ()) e = (e, Nothing)
 interpretCmd (Free (Push x m)) e =
-  interpretCmd m (e { stack = x Seq.<| stack e })
-interpretCmd (Free (Pop k)) e = case Seq.viewl (stack e) of
-  x Seq.:< rest -> interpretCmd (k x) (e { stack = rest })
+  interpretCmd m (e { stack = stack e Seq.|> x })
+interpretCmd (Free (Pop k)) e = case Seq.viewr (stack e) of
+  rest Seq.:> x -> interpretCmd (k x) (e { stack = rest })
   _             -> (e, Just StackUnderflow)
-interpretCmd (Free (Peek k)) e = case Seq.viewl (stack e) of
-  x Seq.:< _ -> interpretCmd (k x) e
+interpretCmd (Free (Peek k)) e = case Seq.viewr (stack e) of
+  _ Seq.:> x -> interpretCmd (k x) e
   _          -> (e, Just StackUnderflow)
 interpretCmd (Free (PopN n k)) e
-  | length topn == n = interpretCmd (k $ reverse $ toList topn)
-                                    (e { stack = rest })
-  | otherwise = (e, Just StackUnderflow)
-  where (topn, rest) = Seq.splitAt n (stack e)
-interpretCmd (Free (PeekN n k)) e
-  | length topn == n = interpretCmd (k $ reverse $ toList topn) e
+  | length topn == n = interpretCmd (k $ toList topn) (e { stack = rest })
   | otherwise        = (e, Just StackUnderflow)
-  where topn = Seq.take n (stack e)
-interpretCmd (Free (StackSize k)) e = interpretCmd (k $ S.encode $ n) e
-  where n = BN $ fromIntegral $ length $ stack e
+  where (rest, topn) = Seq.splitAt (rindex n e) (stack e)
+interpretCmd (Free (PopNth n k)) e = case stack e Seq.!? i of
+  Just x -> interpretCmd (k x) (e { stack = Seq.deleteAt i (stack e) })
+  _      -> (e, Just StackUnderflow)
+  where i = rindex (fromIntegral n) e
+interpretCmd (Free (PeekN n k)) e
+  | length topn == n = interpretCmd (k $ toList topn) e
+  | otherwise        = (e, Just StackUnderflow)
+  where topn = Seq.drop (rindex n e) (stack e)
+interpretCmd (Free (PeekNth n k)) e = case stack e Seq.!? i of
+  Just x -> interpretCmd (k x) e
+  _      -> (e, Just StackUnderflow)
+  where i = rindex (fromIntegral n) e
+interpretCmd (Free (StackSize k)) e =
+  interpretCmd (k $ int2bin $ length $ stack e) e
 interpretCmd (Free (PushAlt x m)) e =
   interpretCmd m (e { alt_stack = x Seq.<| alt_stack e })
 interpretCmd (Free (PopAlt k)) e = case Seq.viewl (alt_stack e) of
@@ -126,6 +142,18 @@ interpretCmd (Free (PopBranch k)) e = case Seq.viewl (branch_stack e) of
   _             -> (e, Just UnbalancedConditional)
 interpretCmd (Free MarkInvalid      ) e = (e { marked_invalid = True }, Nothing)
 interpretCmd (Free (Terminate error)) e = (e, Just error)
+interpretCmd (Free (Num2u32 n k    )) e = case num2u32 n of
+  Just u -> interpretCmd (k u) e
+  _      -> (e, Just NotWord32Bounds)
+
+popnth :: Word32 -> Cmd Elem
+popnth n = liftF (PopNth n id)
+
+peeknth :: Word32 -> Cmd Elem
+peeknth n = liftF (PeekNth n id)
+
+bn2u32 :: BN -> Cmd Word32
+bn2u32 n = liftF (Num2u32 n id)
 
 markinvalid :: Cmd ()
 markinvalid = liftF MarkInvalid
@@ -241,8 +269,10 @@ opcode OP_IF                    = stacksize >>= num >>= \s -> if s == 0
   then terminate UnbalancedConditional
   else pop >>= num >>= \x ->
     pushbranch (Branch { satisfied = x /= 0, is_else_branch = False })
-opcode OP_NOTIF = pop >>= num >>= \x ->
-  pushbranch (Branch { satisfied = x == 0, is_else_branch = False })
+opcode OP_NOTIF = stacksize >>= num >>= \s -> if s == 0
+  then terminate UnbalancedConditional
+  else pop >>= num >>= \x ->
+    pushbranch (Branch { satisfied = x == 0, is_else_branch = False })
 opcode OP_VERIF    = terminate (Unimplemented OP_VERIF)
 opcode OP_VERNOTIF = terminate (Unimplemented OP_VERNOTIF)
 opcode OP_ELSE     = popbranch >>= \b -> if is_else_branch b
@@ -268,6 +298,8 @@ opcode OP_DROP  = pop >> pure ()
 opcode OP_DUP   = peek >>= push
 opcode OP_NIP   = arrange 2 (\[x1, x2] -> [x2])
 opcode OP_OVER  = arrangepeek 2 (\[x1, x2] -> [x1])
+opcode OP_PICK  = pop >>= num >>= bn2u32 >>= peeknth >>= push
+opcode OP_ROLL  = pop >>= num >>= bn2u32 >>= popnth >>= push
 opcode OP_ROT   = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
 opcode OP_SWAP  = arrange 2 (\[x1, x2] -> [x2, x1])
 opcode OP_TUCK  = arrange 2 (\[x1, x2] -> [x2, x1, x2])
