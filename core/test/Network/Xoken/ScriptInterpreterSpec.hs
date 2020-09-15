@@ -57,6 +57,9 @@ spec = do
     unbalancedConditional [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
     unbalancedConditional [OP_ELSE]
     unbalancedConditional [OP_ENDIF]
+    it "returns InvalidAltstackOperation given [OP_FROMALTSTACK]"
+      $          interpret (Script [OP_FROMALTSTACK])
+      `shouldBe` (empty_env, Just InvalidAltstackOperation)
     {-
     it
         "returns TooMuchToLShift given\

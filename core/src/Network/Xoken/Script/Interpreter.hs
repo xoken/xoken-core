@@ -47,6 +47,7 @@ data InterpreterError
   | Unimplemented ScriptOp
   | Message String
   | UnbalancedConditional
+  | InvalidAltstackOperation
   deriving (Show, Eq)
 
 data InterpreterCommands a
@@ -113,7 +114,7 @@ interpretCmd (Free (PushAlt x m)) e =
   interpretCmd m (e { alt_stack = x Seq.<| alt_stack e })
 interpretCmd (Free (PopAlt k)) e = case Seq.viewl (alt_stack e) of
   x Seq.:< rest -> interpretCmd (k x) (e { alt_stack = rest })
-  _             -> (e, Just StackUnderflow)
+  _             -> (e, Just InvalidAltstackOperation)
 interpretCmd (Free (Num x k)) e = case S.decode x of
   Right n -> interpretCmd (k n) e
   _       -> (e, Just ConversionError)
