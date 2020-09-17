@@ -4,6 +4,7 @@ module Network.Xoken.ScriptInterpreterSpec
 where
 
 import qualified Data.ByteString               as BS
+import qualified Data.Serialize                as S
 import qualified Data.Sequence                 as Seq
 import           Test.Hspec
 import           Network.Xoken.Script.Common
@@ -34,7 +35,6 @@ spec = do
       $ test [OP_1, OP_TOALTSTACK, OP_FROMALTSTACK] [1]
     it "returns [2, 1] given [OP_1, OP_TOALTSTACK, OP_2, OP_FROMALTSTACK]"
       $ test [OP_1, OP_TOALTSTACK, OP_2, OP_FROMALTSTACK] [2, 1]
-    {-
     it "returns [3] given [OP_1, OP_2, OP_ADD]" $ test [OP_1, OP_2, OP_ADD] [3]
     it "returns [-1] given [OP_3, OP_4, OP_SUB]"
       $ test [OP_3, OP_4, OP_SUB] [-1]
@@ -45,7 +45,6 @@ spec = do
     it "returns [16] given [OP_1, OP_4, OP_LSHIFT]"
       $ test [OP_1, OP_4, OP_LSHIFT] [16]
     it "returns [8] given [OP_16, OP_2DIV]" $ test [OP_16, OP_2DIV] [8]
-    -}
   describe "interpret failure" $ do
     it "returns StackUnderflow given [OP_DROP]"
       $          interpret (Script [OP_DROP])
@@ -69,36 +68,32 @@ spec = do
     it "returns InvalidAltstackOperation given [OP_FROMALTSTACK]"
       $          interpret (Script [OP_FROMALTSTACK])
       `shouldBe` (empty_env, Just InvalidAltstackOperation)
-    {-
-    it
-        "returns TooMuchToLShift given\
-        \[ OP_1\
-        \, OP_PUSHDATA (S.encode $ succ (fromIntegral (maxBound :: Int) :: Integer)) OPCODE\
-        \, OP_LSHIFT\
-        \]"
-      $          interpret
-                   (Script
-                     [ OP_1
-                     , OP_PUSHDATA
-                       (S.encode $ succ (fromIntegral (maxBound :: Int) :: Integer))
-                       OPCODE
-                     , OP_LSHIFT
-                     ]
-                   )
-      `shouldBe` (Seq.empty, Just $ TooMuchToLShift (2 ^ 63))
-    -}
+    it "returns InvalidNumberRange given [OP_1, OP_1NEGATE, OP_LSHIFT]"
+      $          interpret (Script [OP_1, OP_1NEGATE, OP_LSHIFT])
+      `shouldBe` (empty_env, Just InvalidNumberRange)
   describe "interpret control flow" $ do
     it "returns [2] given [OP_0, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF]"
       $          interpret (Script [OP_0, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF])
-      `shouldBe` (empty_env { stack = Seq.singleton $ int2bin $ 2 }, Nothing)
+      `shouldBe` (empty_env { stack = Seq.singleton $ num2bin $ BN 2 }, Nothing)
     it "returns [1] given [OP_1, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF]"
       $          interpret (Script [OP_1, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF])
-      `shouldBe` (empty_env { stack = Seq.singleton $ int2bin $ 1 }, Nothing)
+      `shouldBe` (empty_env { stack = Seq.singleton $ num2bin $ BN 1 }, Nothing)
+  describe "BN conversion" $ do
+    it "encode 0" $ bin 0 `shouldBe` BS.pack []
+    it "encode 1" $ bin 1 `shouldBe` BS.pack [1]
+    it "encode -1" $ bin (-1) `shouldBe` BS.pack [129]
+    it "encode 256" $ bin 256 `shouldBe` BS.pack [0, 1]
+    it "encode -256" $ bin (-256) `shouldBe` BS.pack [128, 1]
+    it "decode 0" $ num (BS.pack []) `shouldBe` 0
+    it "decode 1" $ num (BS.pack [1]) `shouldBe` 1
+    it "decode -1" $ num (BS.pack [129]) `shouldBe` -1
+    it "decode 256" $ num (BS.pack [0, 1]) `shouldBe` 256
+    it "decode -256" $ num (BS.pack [128, 1]) `shouldBe` -256
 
-test :: [ScriptOp] -> [Int] -> Expectation
+test :: [ScriptOp] -> [BN] -> Expectation
 test ops expected_elems =
   interpret (Script ops)
-    `shouldBe` ( empty_env { stack = Seq.fromList $ int2bin <$> expected_elems }
+    `shouldBe` ( empty_env { stack = Seq.fromList $ num2bin <$> expected_elems }
                , Nothing
                )
 

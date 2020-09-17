@@ -29,7 +29,7 @@ data InterpreterCommands a
     | Peek (Elem -> a)
     | PeekN Int ([Elem] -> a)
     | PeekNth Word32 (Elem -> a)
-    | StackSize (Elem -> a)
+    | StackSize (BN -> a)
     -- alt stack
     | PushAlt Elem a
     | PopAlt (Elem -> a)
@@ -37,8 +37,6 @@ data InterpreterCommands a
     | PushBranch Branch a
     | PopBranch (Branch -> a)
     -- num
-    | Num Elem (BN -> a)
-    | Bin BN (Elem -> a)
     | Num2u32 BN (Word32 -> a)
     deriving (Functor)
 
@@ -48,13 +46,12 @@ data InterpreterError
   = StackUnderflow
   | NoDecoding {length_bytes :: Int, bytestring :: BS.ByteString}
   | NotEnoughBytes {expected :: Word8, actual :: Int}
-  | TooMuchToLShift BN
   | ConversionError
   | Unimplemented ScriptOp
   | Message String
   | UnbalancedConditional
   | InvalidAltstackOperation
-  | NotWord32Bounds
+  | InvalidNumberRange
   deriving (Show, Eq)
 
 data Env = Env
@@ -103,7 +100,7 @@ interpretCmd (Free (PeekNth n k)) e = case stack e Seq.!? i of
   _      -> (e, Just StackUnderflow)
   where i = rindex (fromIntegral n) e
 interpretCmd (Free (StackSize k)) e =
-  interpretCmd (k $ int2bin $ length $ stack e) e
+  interpretCmd (k $ BN $ fromIntegral $ length $ stack e) e
 -- alt stack
 interpretCmd (Free (PushAlt x m)) e =
   interpretCmd m (e { alt_stack = x Seq.<| alt_stack e })
@@ -117,13 +114,9 @@ interpretCmd (Free (PopBranch k)) e = case Seq.viewl (branch_stack e) of
   b Seq.:< rest -> interpretCmd (k b) (e { branch_stack = rest })
   _             -> (e, Just UnbalancedConditional)
 -- num
-interpretCmd (Free (Num x k)) e = case S.decode x of
-  Right n -> interpretCmd (k n) e
-  _       -> (e, Just ConversionError)
-interpretCmd (Free (Bin     n k)) e = interpretCmd (k $ S.encode n) e
 interpretCmd (Free (Num2u32 n k)) e = case num2u32 n of
   Just u -> interpretCmd (k u) e
-  _      -> (e, Just NotWord32Bounds)
+  _      -> (e, Just InvalidNumberRange)
 
 -- signal
 terminate :: InterpreterError -> Cmd ()
@@ -154,7 +147,7 @@ peekn n = liftF (PeekN n id)
 peeknth :: Word32 -> Cmd Elem
 peeknth n = liftF (PeekNth n id)
 
-stacksize :: Cmd Elem
+stacksize :: Cmd BN
 stacksize = liftF (StackSize id)
 
 -- alt stack
@@ -172,11 +165,5 @@ popbranch :: Cmd Branch
 popbranch = liftF (PopBranch id)
 
 -- num
-num :: Elem -> Cmd BN
-num x = liftF (Num x id)
-
-bin :: BN -> Cmd Elem
-bin n = liftF (Bin n id)
-
 bn2u32 :: BN -> Cmd Word32
 bn2u32 n = liftF (Num2u32 n id)
