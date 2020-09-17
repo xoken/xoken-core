@@ -20,22 +20,29 @@ import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
 interpret :: Script -> (Env, Maybe InterpreterError)
 interpret script = go (scriptOps script) empty_env where
-  go (op : rest) e = case Seq.viewl (branch_stack e) of
-    Branch { satisfied = False } Seq.:< _ -> case op of
-      OP_ELSE  -> next
-      OP_ENDIF -> next
-      _        -> go rest e
-    _ -> next
+  go (op : rest) e
+    | failed_branches e == 0 = next $ opcode op
+    | otherwise = case op of
+      OP_IF       -> next failed_if
+      OP_NOTIF    -> next failed_if
+      OP_VERIF    -> next $ opcode op
+      OP_VERNOTIF -> next $ opcode op
+      OP_ELSE     -> next $ opcode op
+      OP_ENDIF    -> next $ opcode op
+      _           -> go rest e
    where
-    next = case interpretCmd (opcode op) e of
+    next cmd = case interpretCmd cmd e of
       (e', Nothing) -> go rest e'
       r             -> r
+    failed_if =
+      pushbranch (Branch { satisfied = False, is_else_branch = False })
   go [] e = (e, Nothing)
 
-empty_env = Env { stack          = Seq.empty
-                , alt_stack      = Seq.empty
-                , branch_stack   = Seq.empty
-                , marked_invalid = False
+empty_env = Env { stack           = Seq.empty
+                , alt_stack       = Seq.empty
+                , branch_stack    = Seq.empty
+                , marked_invalid  = False
+                , failed_branches = 0
                 }
 
 opcode :: ScriptOp -> Cmd ()
@@ -180,9 +187,6 @@ unaryarith f = pop >>= push . bin . f . num
 
 binaryarith :: (BN -> BN -> BN) -> Cmd ()
 binaryarith f = popn 2 >>= arith >>= \[x1, x2] -> push $ bin $ f x1 x2
-
-truth :: Bool -> BN
-truth x = BN $ if x then 1 else 0
 
 btruth :: (a1 -> a2 -> Bool) -> a1 -> a2 -> BN
 btruth = ((truth .) .)

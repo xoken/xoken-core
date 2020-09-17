@@ -9,7 +9,6 @@ import           Control.Monad.Free             ( Free(Pure, Free)
                                                 , liftF
                                                 )
 import qualified Data.ByteString               as BS
-import qualified Data.Serialize                as S
 import qualified Data.Sequence                 as Seq
 import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.Interpreter.OpenSSL_BN
@@ -59,6 +58,7 @@ data Env = Env
   , alt_stack :: Stack Elem
   , branch_stack :: Stack Branch
   , marked_invalid :: Bool
+  , failed_branches :: Word32
   } deriving (Show, Eq)
 
 data Branch = Branch
@@ -68,6 +68,9 @@ data Branch = Branch
 
 rindex :: Int -> Env -> Int
 rindex i e = length (stack e) - 1 - i
+
+truth :: Integral a => Bool -> a 
+truth x = if x then 1 else 0
 
 interpretCmd :: Cmd () -> Env -> (Env, Maybe InterpreterError)
 interpretCmd (Pure ()               ) e = (e, Nothing)
@@ -109,10 +112,19 @@ interpretCmd (Free (PopAlt k)) e = case Seq.viewl (alt_stack e) of
   _             -> (e, Just InvalidAltstackOperation)
 -- branch stack
 interpretCmd (Free (PushBranch b m)) e =
-  (e { branch_stack = b Seq.<| branch_stack e }, Nothing)
+  ( e { branch_stack    = b Seq.<| branch_stack e
+      , failed_branches = failed_branches e + truth (not $ satisfied b)
+      }
+  , Nothing
+  )
 interpretCmd (Free (PopBranch k)) e = case Seq.viewl (branch_stack e) of
-  b Seq.:< rest -> interpretCmd (k b) (e { branch_stack = rest })
-  _             -> (e, Just UnbalancedConditional)
+  b Seq.:< rest -> interpretCmd
+    (k b)
+    (e { branch_stack    = rest
+       , failed_branches = failed_branches e - truth (not $ satisfied b)
+       }
+    )
+  _ -> (e, Just UnbalancedConditional)
 -- num
 interpretCmd (Free (Num2u32 n k)) e = case num2u32 n of
   Just u -> interpretCmd (k u) e

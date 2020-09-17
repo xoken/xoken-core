@@ -65,6 +65,10 @@ spec = do
     unbalancedConditional [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
     unbalancedConditional [OP_ELSE]
     unbalancedConditional [OP_ENDIF]
+    unbalancedConditional
+      [OP_1, OP_IF, OP_IF, OP_ENDIF, OP_ELSE, OP_2, OP_ENDIF]
+    unbalancedConditional
+      [OP_0, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF]
     it "returns InvalidAltstackOperation given [OP_FROMALTSTACK]"
       $          interpret (Script [OP_FROMALTSTACK])
       `shouldBe` (empty_env, Just InvalidAltstackOperation)
@@ -72,12 +76,21 @@ spec = do
       $          interpret (Script [OP_1, OP_1NEGATE, OP_LSHIFT])
       `shouldBe` (empty_env, Just InvalidNumberRange)
   describe "interpret control flow" $ do
+    it "returns [] given " $ test [OP_0, OP_IF, OP_ENDIF] []
+    it "returns [] given [OP_0, OP_IF, OP_ELSE, OP_ENDIF]"
+      $ test [OP_0, OP_IF, OP_ELSE, OP_ENDIF] []
+    it "returns [0] given [OP_1, OP_IF, OP_0, OP_ENDIF]"
+      $ test [OP_1, OP_IF, OP_0, OP_ENDIF] [0]
     it "returns [2] given [OP_0, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF]"
-      $          interpret (Script [OP_0, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF])
-      `shouldBe` (empty_env { stack = Seq.singleton $ num2bin $ BN 2 }, Nothing)
+      $ test [OP_0, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF] [2]
     it "returns [1] given [OP_1, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF]"
-      $          interpret (Script [OP_1, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF])
-      `shouldBe` (empty_env { stack = Seq.singleton $ num2bin $ BN 1 }, Nothing)
+      $ test [OP_1, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF] [1]
+    it
+        "returns [2] given [OP_0, OP_IF, OP_IF, OP_ENDIF, OP_ELSE, OP_2, OP_ENDIF]"
+      $ test [OP_0, OP_IF, OP_IF, OP_ENDIF, OP_ELSE, OP_2, OP_ENDIF] [2]
+    it
+        "returns [1] given [OP_1, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF]"
+      $ test [OP_1, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF] [1]
   describe "BN conversion" $ do
     it "encode 0" $ bin 0 `shouldBe` BS.pack []
     it "encode 1" $ bin 1 `shouldBe` BS.pack [1]
@@ -93,12 +106,12 @@ spec = do
 test :: [ScriptOp] -> [BN] -> Expectation
 test ops expected_elems =
   interpret (Script ops)
-    `shouldBe` ( empty_env { stack = Seq.fromList $ num2bin <$> expected_elems }
+    `shouldBe` ( empty_env { stack = Seq.fromList $ bin <$> expected_elems }
                , Nothing
                )
 
 unbalancedConditional :: [ScriptOp] -> SpecWith (Arg Expectation)
 unbalancedConditional ops =
   it ("returns UnbalancedConditional given " ++ show ops)
-    $          interpret (Script ops)
-    `shouldBe` (empty_env, Just UnbalancedConditional)
+    $          snd (interpret (Script ops))
+    `shouldBe` (Just UnbalancedConditional)
