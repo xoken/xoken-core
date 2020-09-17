@@ -47,11 +47,11 @@ empty_env = Env { stack           = Seq.empty
 
 opcode :: ScriptOp -> Cmd ()
 -- Pushing Data
+opcode OP_0                     = push $ BS.empty
 opcode (OP_PUSHDATA bs OPCODE ) = push bs
 opcode (OP_PUSHDATA bs OPDATA1) = pushdata 1 bs
 opcode (OP_PUSHDATA bs OPDATA2) = pushdata 2 bs
 opcode (OP_PUSHDATA bs OPDATA4) = pushdata 4 bs
-opcode OP_0                     = pushint 0
 opcode OP_1NEGATE               = pushint (-1)
 opcode OP_1                     = pushint 1
 opcode OP_2                     = pushint 2
@@ -98,21 +98,22 @@ opcode OP_3DUP         = arrangepeek 3 (\[x1, x2, x3] -> [x1, x2, x3])
 opcode OP_2OVER        = arrangepeek 4 (\[x1, x2, x3, x4] -> [x1, x2])
 opcode OP_2ROT =
   arrange 6 (\[x1, x2, x3, x4, x5, x6] -> [x3, x4, x5, x6, x1, x2])
-opcode OP_2SWAP   = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
-opcode OP_IFDUP   = peek >>= \x1 -> when (num x1 /= 0) (push x1)
-opcode OP_DEPTH   = stacksize >>= push . bin
-opcode OP_DROP    = pop >> pure ()
-opcode OP_DUP     = peek >>= push
-opcode OP_NIP     = arrange 2 (\[x1, x2] -> [x2])
-opcode OP_OVER    = arrangepeek 2 (\[x1, x2] -> [x1])
-opcode OP_PICK    = pop >>= bn2u32 . num >>= peeknth >>= push
-opcode OP_ROLL    = pop >>= bn2u32 . num >>= popnth >>= push
-opcode OP_ROT     = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
-opcode OP_SWAP    = arrange 2 (\[x1, x2] -> [x2, x1])
-opcode OP_TUCK    = arrange 2 (\[x1, x2] -> [x2, x1, x2])
+opcode OP_2SWAP = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
+opcode OP_IFDUP = peek >>= \x1 -> when (num x1 /= 0) (push x1)
+opcode OP_DEPTH = stacksize >>= push . bin
+opcode OP_DROP  = pop >> pure ()
+opcode OP_DUP   = peek >>= push
+opcode OP_NIP   = arrange 2 (\[x1, x2] -> [x2])
+opcode OP_OVER  = arrangepeek 2 (\[x1, x2] -> [x1])
+opcode OP_PICK  = pop >>= bn2u32 . num >>= peeknth >>= push
+opcode OP_ROLL  = pop >>= bn2u32 . num >>= popnth >>= push
+opcode OP_ROT   = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
+opcode OP_SWAP  = arrange 2 (\[x1, x2] -> [x2, x1])
+opcode OP_TUCK  = arrange 2 (\[x1, x2] -> [x2, x1, x2])
 -- Data manipulation
-opcode OP_CAT     = binary BS.append
-opcode OP_SPLIT   = terminate (Unimplemented OP_SPLIT)
+opcode OP_CAT   = binary BS.append
+opcode OP_SPLIT = popn 2 >>= \[x1, x2] -> bn2u32 (num x2)
+  >>= \n -> let (y1, y2) = BS.splitAt (fromIntegral n) x1 in pushn [y1, y2]
 opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] -> bn2u32 x2
   >>= \length -> maybe (terminate ConversionError) push (num2binpad x1 length)
 opcode OP_BIN2NUM            = pop >>= push . bin . num

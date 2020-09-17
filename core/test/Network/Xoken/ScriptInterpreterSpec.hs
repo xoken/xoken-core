@@ -3,6 +3,7 @@ module Network.Xoken.ScriptInterpreterSpec
   )
 where
 
+import           Data.Word                      ( Word8 )
 import qualified Data.ByteString               as BS
 import qualified Data.Serialize                as S
 import qualified Data.Sequence                 as Seq
@@ -102,11 +103,31 @@ spec = do
     it "decode -1" $ num (BS.pack [129]) `shouldBe` -1
     it "decode 256" $ num (BS.pack [0, 1]) `shouldBe` 256
     it "decode -256" $ num (BS.pack [128, 1]) `shouldBe` -256
+  describe "Data manipulation" $ do
+    it "returns [] given [OP_0, OP_0, OP_CAT]"
+      $ testBS [OP_0, OP_0, OP_CAT] [[]]
+    it "returns [0x1234] given [OP_PUSHDATA 0x12, OP_PUSHDATA 0x34, OP_CAT]"
+      $ testBS
+          [ OP_PUSHDATA (BS.pack [12]) OPCODE
+          , OP_PUSHDATA (BS.pack [34]) OPCODE
+          , OP_CAT
+          ]
+          [[12, 34]]
+    it "returns [0x12, 0x34] given [OP_PUSHDATA 0x1234, OP_1, OP_SPLIT]"
+      $ testBS [OP_PUSHDATA (BS.pack [12, 34]) OPCODE, OP_1, OP_SPLIT]
+               [[12], [34]]
 
 test :: [ScriptOp] -> [BN] -> Expectation
 test ops expected_elems =
   interpret (Script ops)
     `shouldBe` ( empty_env { stack = Seq.fromList $ bin <$> expected_elems }
+               , Nothing
+               )
+
+testBS :: [ScriptOp] -> [[Word8]] -> Expectation
+testBS ops expected_elems =
+  interpret (Script ops)
+    `shouldBe` ( empty_env { stack = Seq.fromList $ BS.pack <$> expected_elems }
                , Nothing
                )
 
