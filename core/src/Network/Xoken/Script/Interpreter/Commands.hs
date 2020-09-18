@@ -70,66 +70,62 @@ data Branch = Branch
 rindex :: Int -> Env -> Int
 rindex i e = length (stack e) - 1 - i
 
-truth :: Integral a => Bool -> a 
+truth :: Integral a => Bool -> a
 truth x = if x then 1 else 0
 
 interpretCmd :: Cmd () -> Env -> (Env, Maybe InterpreterError)
-interpretCmd (Pure ()               ) e = (e, Nothing)
--- signal
-interpretCmd (Free (Terminate error)) e = (e, Just error)
-interpretCmd (Free MarkInvalid      ) e = (e { marked_invalid = True }, Nothing)
--- stack
-interpretCmd (Free (Push x m)) e =
-  interpretCmd m (e { stack = stack e Seq.|> x })
-interpretCmd (Free (Pop k)) e = case Seq.viewr (stack e) of
-  rest Seq.:> x -> interpretCmd (k x) (e { stack = rest })
-  _             -> (e, Just StackUnderflow)
-interpretCmd (Free (PopN n k)) e
-  | length topn == n = interpretCmd (k $ toList topn) (e { stack = rest })
-  | otherwise        = (e, Just StackUnderflow)
-  where (rest, topn) = Seq.splitAt (rindex n e) (stack e)
-interpretCmd (Free (PopNth n k)) e = case stack e Seq.!? i of
-  Just x -> interpretCmd (k x) (e { stack = Seq.deleteAt i (stack e) })
-  _      -> (e, Just StackUnderflow)
-  where i = rindex (fromIntegral n) e
-interpretCmd (Free (Peek k)) e = case Seq.viewr (stack e) of
-  _ Seq.:> x -> interpretCmd (k x) e
-  _          -> (e, Just StackUnderflow)
-interpretCmd (Free (PeekN n k)) e
-  | length topn == n = interpretCmd (k $ toList topn) e
-  | otherwise        = (e, Just StackUnderflow)
-  where topn = Seq.drop (rindex n e) (stack e)
-interpretCmd (Free (PeekNth n k)) e = case stack e Seq.!? i of
-  Just x -> interpretCmd (k x) e
-  _      -> (e, Just StackUnderflow)
-  where i = rindex (fromIntegral n) e
-interpretCmd (Free (StackSize k)) e =
-  interpretCmd (k $ BN $ fromIntegral $ length $ stack e) e
--- alt stack
-interpretCmd (Free (PushAlt x m)) e =
-  interpretCmd m (e { alt_stack = x Seq.<| alt_stack e })
-interpretCmd (Free (PopAlt k)) e = case Seq.viewl (alt_stack e) of
-  x Seq.:< rest -> interpretCmd (k x) (e { alt_stack = rest })
-  _             -> (e, Just InvalidAltstackOperation)
--- branch stack
-interpretCmd (Free (PushBranch b m)) e =
-  ( e { branch_stack    = b Seq.<| branch_stack e
-      , failed_branches = failed_branches e + truth (not $ satisfied b)
-      }
-  , Nothing
-  )
-interpretCmd (Free (PopBranch k)) e = case Seq.viewl (branch_stack e) of
-  b Seq.:< rest -> interpretCmd
-    (k b)
-    (e { branch_stack    = rest
-       , failed_branches = failed_branches e - truth (not $ satisfied b)
-       }
-    )
-  _ -> (e, Just UnbalancedConditional)
--- num
-interpretCmd (Free (Num2u32 n k)) e = case num2u32 n of
-  Just u -> interpretCmd (k u) e
-  _      -> (e, Just InvalidNumberRange)
+interpretCmd = go where
+  go (Pure ()) e = (e, Nothing)
+  go (Free x ) e = case x of
+    -- signal
+    Terminate error -> (e, Just error)
+    MarkInvalid     -> (e { marked_invalid = True }, Nothing)
+    -- stack
+    Push x m        -> go m (e { stack = stack e Seq.|> x })
+    Pop k           -> case Seq.viewr (stack e) of
+      rest Seq.:> x -> go (k x) (e { stack = rest })
+      _             -> (e, Just StackUnderflow)
+    PopN n k | length topn == n -> go (k $ toList topn) (e { stack = rest })
+             | otherwise        -> (e, Just StackUnderflow)
+      where (rest, topn) = Seq.splitAt (rindex n e) (stack e)
+    PopNth n k -> case stack e Seq.!? i of
+      Just x -> go (k x) (e { stack = Seq.deleteAt i (stack e) })
+      _      -> (e, Just StackUnderflow)
+      where i = rindex (fromIntegral n) e
+    Peek k -> case Seq.viewr (stack e) of
+      _ Seq.:> x -> go (k x) e
+      _          -> (e, Just StackUnderflow)
+    PeekN n k | length topn == n -> go (k $ toList topn) e
+              | otherwise        -> (e, Just StackUnderflow)
+      where topn = Seq.drop (rindex n e) (stack e)
+    PeekNth n k -> case stack e Seq.!? rindex (fromIntegral n) e of
+      Just x -> go (k x) e
+      _      -> (e, Just StackUnderflow)
+    StackSize k -> go (k $ BN $ fromIntegral $ length $ stack e) e
+    -- alt stack
+    PushAlt x m -> go m (e { alt_stack = x Seq.<| alt_stack e })
+    PopAlt k    -> case Seq.viewl (alt_stack e) of
+      x Seq.:< rest -> go (k x) (e { alt_stack = rest })
+      _             -> (e, Just InvalidAltstackOperation)
+    -- branch stack
+    PushBranch b m ->
+      ( e { branch_stack    = b Seq.<| branch_stack e
+          , failed_branches = failed_branches e + truth (not $ satisfied b)
+          }
+      , Nothing
+      )
+    PopBranch k -> case Seq.viewl (branch_stack e) of
+      b Seq.:< rest -> go
+        (k b)
+        (e { branch_stack    = rest
+           , failed_branches = failed_branches e - truth (not $ satisfied b)
+           }
+        )
+      _ -> (e, Just UnbalancedConditional)
+    -- num
+    Num2u32 n k -> case num2u32 n of
+      Just u -> go (k u) e
+      _      -> (e, Just InvalidNumberRange)
 
 -- signal
 terminate :: InterpreterError -> Cmd ()

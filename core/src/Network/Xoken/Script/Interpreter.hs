@@ -24,8 +24,8 @@ interpret script = go (scriptOps script) empty_env where
   go (op : rest) e
     | failed_branches e == 0 = next $ opcode op
     | otherwise = case op of
-      OP_IF       -> next failed_if
-      OP_NOTIF    -> next failed_if
+      OP_IF       -> next $ pushbranch failed_branch
+      OP_NOTIF    -> next $ pushbranch failed_branch
       OP_VERIF    -> next $ opcode op
       OP_VERNOTIF -> next $ opcode op
       OP_ELSE     -> next $ opcode op
@@ -35,8 +35,7 @@ interpret script = go (scriptOps script) empty_env where
     next cmd = case interpretCmd cmd e of
       (e', Nothing) -> go rest e'
       r             -> r
-    failed_if =
-      pushbranch (Branch { satisfied = False, is_else_branch = False })
+    failed_branch = Branch { satisfied = False, is_else_branch = False }
   go [] e = (e, Nothing)
 
 empty_env = Env { stack           = Seq.empty

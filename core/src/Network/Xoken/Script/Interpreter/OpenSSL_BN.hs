@@ -59,4 +59,4 @@ unroll = unfoldr step where
 add_sign :: Word8 -> [Word8] -> [Word8]
 add_sign sign_bit bytes@(byte : rest) | byte .&. 0x80 /= 0 = sign_bit : bytes
                                       | otherwise = (byte .|. sign_bit) : rest
-add_sign sign_bit [] = if sign_bit /= 0 then [sign_bit] else []
+add_sign _ [] = []
