@@ -117,34 +117,36 @@ opcode OP_SPLIT = popn 2 >>= \[x1, x2] -> bn2u32 (num x2)
   >>= \n -> let (y1, y2) = BS.splitAt (fromIntegral n) x1 in pushn [y1, y2]
 opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] -> bn2u32 x2
   >>= \length -> maybe (terminate ConversionError) push (num2binpad x1 length)
-opcode OP_BIN2NUM            = pop >>= push . bin . num
-opcode OP_SIZE               = peek >>= pushint . BS.length
+opcode OP_BIN2NUM     = pop >>= push . bin . num
+opcode OP_SIZE        = peek >>= pushint . BS.length
 -- Bitwise logic
-opcode OP_INVERT             = unary (BS.map complement)
-opcode OP_AND                = binarybitwise (.&.)
-opcode OP_OR                 = binarybitwise (.|.)
-opcode OP_XOR                = binarybitwise xor
-opcode OP_EQUAL = popn 2 >>= push . bin . \[x1, x2] -> truth $ x1 == x2
+opcode OP_INVERT      = unary (BS.map complement)
+opcode OP_AND         = binarybitwise (.&.)
+opcode OP_OR          = binarybitwise (.|.)
+opcode OP_XOR         = binarybitwise xor
+opcode OP_EQUAL       = popn 2 >>= push . bin . \[x1, x2] -> truth $ x1 == x2
 opcode OP_EQUALVERIFY = popn 2 >>= \[x1, x2] -> when (x1 /= x2) markinvalid
 -- Arithmetic
-opcode OP_1ADD               = unaryarith succ
-opcode OP_1SUB               = unaryarith pred
-opcode OP_2MUL               = unaryarith (flip shiftL 1)
-opcode OP_2DIV               = unaryarith (flip shiftR 1)
-opcode OP_NEGATE             = unaryarith negate
-opcode OP_ABS                = unaryarith abs
-opcode OP_NOT                = unaryarith (truth . (== 0))
-opcode OP_0NOTEQUAL          = unaryarith (truth . (/= 0))
-opcode OP_ADD                = binaryarith (+)
-opcode OP_SUB                = binaryarith (-)
-opcode OP_MUL                = binaryarith (*)
-opcode OP_DIV                = binaryarith div
-opcode OP_MOD                = binaryarith mod
-opcode OP_LSHIFT             = shift shiftL
-opcode OP_RSHIFT             = shift shiftR
-opcode OP_BOOLAND            = binaryarith (\a b -> truth (a /= 0 && b /= 0))
-opcode OP_BOOLOR             = binaryarith (\a b -> truth (a /= 0 || b /= 0))
-opcode OP_NUMEQUAL           = binaryarith (btruth (==))
+opcode OP_1ADD        = unaryarith succ
+opcode OP_1SUB        = unaryarith pred
+opcode OP_2MUL        = unaryarith (flip shiftL 1)
+opcode OP_2DIV        = unaryarith (flip shiftR 1)
+opcode OP_NEGATE      = unaryarith negate
+opcode OP_ABS         = unaryarith abs
+opcode OP_NOT         = unaryarith (truth . (== 0))
+opcode OP_0NOTEQUAL   = unaryarith (truth . (/= 0))
+opcode OP_ADD         = binaryarith (+)
+opcode OP_SUB         = binaryarith (-)
+opcode OP_MUL         = binaryarith (*)
+opcode OP_DIV         = binaryarith div
+opcode OP_MOD         = binaryarith mod
+opcode OP_LSHIFT      = shift shiftL
+opcode OP_RSHIFT      = shift shiftR
+opcode OP_BOOLAND     = binaryarith (\a b -> truth (a /= 0 && b /= 0))
+opcode OP_BOOLOR      = binaryarith (\a b -> truth (a /= 0 || b /= 0))
+opcode OP_NUMEQUAL    = binaryarith (btruth (==))
+opcode OP_NUMEQUALVERIFY =
+  popn 2 >>= arith >>= \[x1, x2] -> when (x1 /= x2) markinvalid
 opcode OP_NUMNOTEQUAL        = binaryarith (btruth (/=))
 opcode OP_LESSTHAN           = binaryarith (btruth (<))
 opcode OP_GREATERTHAN        = binaryarith (btruth (>))
@@ -154,7 +156,36 @@ opcode OP_MIN                = binaryarith min
 opcode OP_MAX                = binaryarith max
 opcode OP_WITHIN = popn 3 >>= arith >>= push . bin . \[x, min, max] ->
   truth $ min <= x && x < max
-opcode scriptOp = terminate (Unimplemented scriptOp)
+-- Crypto
+opcode OP_RIPEMD160      = terminate (Unimplemented OP_RIPEMD160)
+opcode OP_SHA1           = terminate (Unimplemented OP_SHA1)
+opcode OP_SHA256         = terminate (Unimplemented OP_SHA256)
+opcode OP_HASH160        = terminate (Unimplemented OP_HASH160)
+opcode OP_HASH256        = terminate (Unimplemented OP_HASH256)
+opcode OP_CODESEPARATOR  = terminate (Unimplemented OP_CODESEPARATOR)
+opcode OP_CHECKSIG       = terminate (Unimplemented OP_CHECKSIG)
+opcode OP_CHECKSIGVERIFY = terminate (Unimplemented OP_CHECKSIGVERIFY)
+opcode OP_CHECKMULTISIG  = terminate (Unimplemented OP_CHECKMULTISIG)
+opcode OP_CHECKMULTISIGVERIFY =
+  terminate (Unimplemented OP_CHECKMULTISIGVERIFY)
+-- Pseudo-words
+opcode OP_PUBKEYHASH        = terminate (Unimplemented OP_PUBKEYHASH)
+opcode OP_PUBKEY            = terminate (Unimplemented OP_PUBKEY)
+opcode (OP_INVALIDOPCODE n) = terminate (Unimplemented (OP_INVALIDOPCODE n))
+-- Reserved words
+opcode OP_RESERVED          = markinvalid
+opcode OP_RESERVED1         = markinvalid
+opcode OP_RESERVED2         = markinvalid
+opcode OP_NOP1              = pure ()
+opcode OP_NOP2              = pure ()
+opcode OP_NOP3              = pure ()
+opcode OP_NOP4              = pure ()
+opcode OP_NOP5              = pure ()
+opcode OP_NOP6              = pure ()
+opcode OP_NOP7              = pure ()
+opcode OP_NOP8              = pure ()
+opcode OP_NOP9              = pure ()
+opcode OP_NOP10             = pure ()
 
 pushint :: Int -> Cmd ()
 pushint = push . bin . BN . fromIntegral

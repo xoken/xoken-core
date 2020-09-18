@@ -13,7 +13,7 @@ import           Data.Bits                      ( Bits
                                                 )
 import qualified Data.ByteString               as BS
 
-class (Eq a, Ord a) => BigNum a where
+class BigNum a where
    bin2num :: BS.ByteString -> a
    num2bin :: a -> BS.ByteString
    num2binpad :: a -> Word32 -> Maybe BS.ByteString
