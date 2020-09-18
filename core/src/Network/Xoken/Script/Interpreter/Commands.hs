@@ -51,6 +51,7 @@ data InterpreterError
   | UnbalancedConditional
   | InvalidAltstackOperation
   | InvalidNumberRange
+  | InvalidOperandSize
   deriving (Show, Eq)
 
 data Env = Env

@@ -9,7 +9,6 @@ import           Data.ByteString.Builder        ( toLazyByteString
                                                 , byteStringHex
                                                 )
 import qualified Data.ByteString               as BS
-import qualified Data.Serialize                as S
 import qualified Data.Sequence                 as Seq
 import           Test.Hspec
 import           Network.Xoken.Script.Common
@@ -69,6 +68,9 @@ spec = do
     it "returns InvalidNumberRange given [OP_1, OP_1NEGATE, OP_LSHIFT]"
       $          interpret (Script [OP_1, OP_1NEGATE, OP_LSHIFT])
       `shouldBe` (empty_env, Just InvalidNumberRange)
+    it "returns InvalidOperandSize given [OP_0, OP_1, OP_AND]"
+      $          interpret (Script [OP_0, OP_1, OP_AND])
+      `shouldBe` (empty_env, Just InvalidOperandSize)
   describe "interpret control flow" $ do
     test [OP_0, OP_IF, OP_ENDIF]                      []
     test [OP_0, OP_IF, OP_ELSE, OP_ENDIF]             []
@@ -92,6 +94,13 @@ spec = do
     testBS []               [OP_0, OP_0, OP_CAT] [[]]
     testBS [[0x12], [0x34]] [OP_CAT]             [[0x12, 0x34]]
     testBS [[0x12, 0x34]]   [OP_1, OP_SPLIT]     [[0x12], [0x34]]
+  describe "Bitwise logic" $ do
+    testBS [[0x12, 0x34]]   [OP_INVERT] [[0xED, 0xCB]]
+    testBS [[0x12], [0x34]] [OP_AND]    [[0x10]]
+    testBS [[0x12], [0x34]] [OP_OR]     [[0x36]]
+    testBS [[0x12], [0x34]] [OP_XOR]    [[0x26]]
+    test [OP_1, OP_1, OP_EQUAL] [1]
+    test [OP_1, OP_2, OP_EQUAL] [0]
 
 test :: [ScriptOp] -> [BN] -> SpecWith (Arg Expectation)
 test ops expected_elems =

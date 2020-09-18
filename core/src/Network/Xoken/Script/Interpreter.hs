@@ -1,5 +1,6 @@
 module Network.Xoken.Script.Interpreter where
 
+import           Data.Word                      ( Word8 )
 import           Data.Maybe                     ( maybe )
 import           Data.Bits                      ( complement
                                                 , (.&.)
@@ -120,10 +121,11 @@ opcode OP_BIN2NUM            = pop >>= push . bin . num
 opcode OP_SIZE               = peek >>= pushint . BS.length
 -- Bitwise logic
 opcode OP_INVERT             = unary (BS.map complement)
-opcode OP_AND                = binary ((BS.pack .) . BS.zipWith (.&.))
-opcode OP_OR                 = binary ((BS.pack .) . BS.zipWith (.|.))
-opcode OP_XOR                = binary ((BS.pack .) . BS.zipWith xor)
+opcode OP_AND                = binarybitwise (.&.)
+opcode OP_OR                 = binarybitwise (.|.)
+opcode OP_XOR                = binarybitwise xor
 opcode OP_EQUAL = popn 2 >>= push . bin . \[x1, x2] -> truth $ x1 == x2
+opcode OP_EQUALVERIFY = popn 2 >>= \[x1, x2] -> when (x1 /= x2) markinvalid
 -- Arithmetic
 opcode OP_1ADD               = unaryarith succ
 opcode OP_1SUB               = unaryarith pred
@@ -188,6 +190,11 @@ unaryarith f = pop >>= push . bin . f . num
 
 binaryarith :: (BN -> BN -> BN) -> Cmd ()
 binaryarith f = popn 2 >>= arith >>= \[x1, x2] -> push $ bin $ f x1 x2
+
+binarybitwise :: (Word8 -> Word8 -> Word8) -> Cmd ()
+binarybitwise f = popn 2 >>= \[x1, x2] -> if BS.length x1 == BS.length x2
+  then push (BS.pack $ BS.zipWith f x1 x2)
+  else terminate InvalidOperandSize
 
 btruth :: (a1 -> a2 -> Bool) -> a1 -> a2 -> BN
 btruth = ((truth .) .)
