@@ -47,7 +47,6 @@ interpret script = go (scriptOps script) empty_env where
 empty_env = Env { stack           = Seq.empty
                 , alt_stack       = Seq.empty
                 , branch_stack    = Seq.empty
-                , marked_invalid  = False
                 , failed_branches = 0
                 }
 
@@ -93,7 +92,7 @@ opcode OP_ELSE     = popbranch >>= \b -> if is_else_branch b
   else pushbranch
     (Branch { satisfied = not $ satisfied b, is_else_branch = True })
 opcode OP_ENDIF        = popbranch >> pure ()
-opcode OP_VERIFY       = pop >>= \x -> when (num x == 0) markinvalid
+opcode OP_VERIFY       = pop >>= \x -> when (num x == 0) (terminate Verify)
 opcode OP_RETURN       = terminate (Unimplemented OP_RETURN)
 -- Stack operations
 opcode OP_TOALTSTACK   = pop >>= pushalt
@@ -130,7 +129,7 @@ opcode OP_AND         = binarybitwise (.&.)
 opcode OP_OR          = binarybitwise (.|.)
 opcode OP_XOR         = binarybitwise xor
 opcode OP_EQUAL       = popn 2 >>= push . bin . \[x1, x2] -> truth $ x1 == x2
-opcode OP_EQUALVERIFY = popn 2 >>= \[x1, x2] -> when (x1 /= x2) markinvalid
+opcode OP_EQUALVERIFY = popn 2 >>= \[x1, x2] -> when (x1 /= x2) (terminate EqualVerify)
 -- Arithmetic
 opcode OP_1ADD        = unaryarith succ
 opcode OP_1SUB        = unaryarith pred
@@ -151,7 +150,7 @@ opcode OP_BOOLAND     = binaryarith (\a b -> truth (a /= 0 && b /= 0))
 opcode OP_BOOLOR      = binaryarith (\a b -> truth (a /= 0 || b /= 0))
 opcode OP_NUMEQUAL    = binaryarith (btruth (==))
 opcode OP_NUMEQUALVERIFY =
-  popn 2 >>= arith >>= \[x1, x2] -> when (x1 /= x2) markinvalid
+  popn 2 >>= arith >>= \[x1, x2] -> when (x1 /= x2) (terminate NumEqualVerify)
 opcode OP_NUMNOTEQUAL        = binaryarith (btruth (/=))
 opcode OP_LESSTHAN           = binaryarith (btruth (<))
 opcode OP_GREATERTHAN        = binaryarith (btruth (>))
@@ -176,11 +175,11 @@ opcode OP_CHECKMULTISIGVERIFY =
 -- Pseudo-words
 opcode OP_PUBKEYHASH        = terminate (Unimplemented OP_PUBKEYHASH)
 opcode OP_PUBKEY            = terminate (Unimplemented OP_PUBKEY)
-opcode (OP_INVALIDOPCODE n) = terminate (Unimplemented (OP_INVALIDOPCODE n))
+opcode (OP_INVALIDOPCODE n) = terminate (BadOpcode (OP_INVALIDOPCODE n))
 -- Reserved words
-opcode OP_RESERVED          = markinvalid
-opcode OP_RESERVED1         = markinvalid
-opcode OP_RESERVED2         = markinvalid
+opcode OP_RESERVED          = terminate (BadOpcode OP_RESERVED)
+opcode OP_RESERVED1         = terminate (BadOpcode OP_RESERVED1)
+opcode OP_RESERVED2         = terminate (BadOpcode OP_RESERVED2)
 opcode OP_NOP1              = pure ()
 opcode OP_NOP2              = pure ()
 opcode OP_NOP3              = pure ()

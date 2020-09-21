@@ -19,7 +19,6 @@ type Stack a = Seq.Seq a
 data InterpreterCommands a
     -- signal
     = Terminate InterpreterError
-    | MarkInvalid
     -- stack
     | Push Elem a
     | Pop (Elem -> a)
@@ -47,18 +46,20 @@ data InterpreterError
   | NotEnoughBytes {expected :: Word8, actual :: Int}
   | ConversionError
   | Unimplemented ScriptOp
-  | Message String
   | UnbalancedConditional
   | InvalidAltstackOperation
   | InvalidNumberRange
   | InvalidOperandSize
+  | Verify
+  | EqualVerify
+  | NumEqualVerify
+  | BadOpcode ScriptOp
   deriving (Show, Eq)
 
 data Env = Env
   { stack :: Stack Elem
   , alt_stack :: Stack Elem
   , branch_stack :: Stack Branch
-  , marked_invalid :: Bool
   , failed_branches :: Word32
   } deriving (Show, Eq)
 
@@ -79,7 +80,6 @@ interpretCmd = go where
   go (Free x ) e = case x of
     -- signal
     Terminate error -> (e, Just error)
-    MarkInvalid     -> (e { marked_invalid = True }, Nothing)
     -- stack
     Push x m        -> go m (e { stack = stack e Seq.|> x })
     Pop k           -> case Seq.viewr (stack e) of
@@ -130,9 +130,6 @@ interpretCmd = go where
 -- signal
 terminate :: InterpreterError -> Cmd ()
 terminate e = liftF (Terminate e)
-
-markinvalid :: Cmd ()
-markinvalid = liftF MarkInvalid
 
 -- stack
 push :: Elem -> Cmd ()
