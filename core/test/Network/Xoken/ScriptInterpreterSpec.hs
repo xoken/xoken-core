@@ -62,6 +62,7 @@ spec = do
       [OP_1, OP_IF, OP_IF, OP_ENDIF, OP_ELSE, OP_2, OP_ENDIF]
     unbalancedConditional
       [OP_0, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF]
+    unbalancedConditional [OP_0, OP_RETURN, OP_ELSE]
     it "returns InvalidAltstackOperation given [OP_FROMALTSTACK]"
       $          interpret (Script [OP_FROMALTSTACK])
       `shouldBe` (empty_env, Just InvalidAltstackOperation)
@@ -79,6 +80,7 @@ spec = do
     test [OP_1, OP_IF, OP_1, OP_ELSE, OP_2, OP_ENDIF] [1]
     test [OP_0, OP_IF, OP_IF, OP_ENDIF, OP_ELSE, OP_2, OP_ENDIF] [2]
     test [OP_1, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF] [1]
+    test [OP_RETURN, OP_ELSE]                         []
   describe "BN conversion" $ do
     it "encode 0" $ bin 0 `shouldBe` BS.pack []
     it "encode 1" $ bin 1 `shouldBe` BS.pack [1]
