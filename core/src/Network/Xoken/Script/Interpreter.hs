@@ -12,7 +12,13 @@ import           Data.Bits                      ( complement
 import           Control.Monad                  ( sequence_
                                                 , when
                                                 )
+import           Crypto.Hash                    ( hashWith
+                                                , RIPEMD160(..)
+                                                , SHA1(..)
+                                                , SHA256(..)
+                                                )
 import qualified Data.ByteString               as BS
+import qualified Data.ByteArray                as BA
 import qualified Data.Serialize                as S
 import qualified Data.Sequence                 as Seq
 import           Network.Xoken.Script.Common
@@ -156,11 +162,11 @@ opcode OP_MAX                = binaryarith max
 opcode OP_WITHIN = popn 3 >>= arith >>= push . bin . \[x, min, max] ->
   truth $ min <= x && x < max
 -- Crypto
-opcode OP_RIPEMD160      = terminate (Unimplemented OP_RIPEMD160)
-opcode OP_SHA1           = terminate (Unimplemented OP_SHA1)
-opcode OP_SHA256         = terminate (Unimplemented OP_SHA256)
-opcode OP_HASH160        = terminate (Unimplemented OP_HASH160)
-opcode OP_HASH256        = terminate (Unimplemented OP_HASH256)
+opcode OP_RIPEMD160      = unary (BA.convert . hashWith RIPEMD160)
+opcode OP_SHA1           = unary (BA.convert . hashWith SHA1)
+opcode OP_SHA256         = unary (BA.convert . hashWith SHA256)
+opcode OP_HASH160 = unary (BA.convert . hashWith RIPEMD160 . hashWith SHA256)
+opcode OP_HASH256 = unary (BA.convert . hashWith SHA256 . hashWith SHA256)
 opcode OP_CODESEPARATOR  = terminate (Unimplemented OP_CODESEPARATOR)
 opcode OP_CHECKSIG       = terminate (Unimplemented OP_CHECKSIG)
 opcode OP_CHECKSIGVERIFY = terminate (Unimplemented OP_CHECKSIGVERIFY)

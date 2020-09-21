@@ -91,16 +91,28 @@ spec = do
     it "decode 256" $ num (BS.pack [0, 1]) `shouldBe` 256
     it "decode -256" $ num (BS.pack [128, 1]) `shouldBe` -256
   describe "Data manipulation" $ do
-    testBS []               [OP_0, OP_0, OP_CAT] [[]]
-    testBS [[0x12], [0x34]] [OP_CAT]             [[0x12, 0x34]]
-    testBS [[0x12, 0x34]]   [OP_1, OP_SPLIT]     [[0x12], [0x34]]
+    testBS []           [OP_0, OP_0, OP_CAT] [0x0]
+    testBS [0x12, 0x34] [OP_CAT]             [0x1234]
+    testBS [0x1234]     [OP_1, OP_SPLIT]     [0x12, 0x34]
   describe "Bitwise logic" $ do
-    testBS [[0x12, 0x34]]   [OP_INVERT] [[0xED, 0xCB]]
-    testBS [[0x12], [0x34]] [OP_AND]    [[0x10]]
-    testBS [[0x12], [0x34]] [OP_OR]     [[0x36]]
-    testBS [[0x12], [0x34]] [OP_XOR]    [[0x26]]
+    testBS [0x1234]     [OP_INVERT] [0xEDCB]
+    testBS [0x12, 0x34] [OP_AND]    [0x10]
+    testBS [0x12, 0x34] [OP_OR]     [0x36]
+    testBS [0x12, 0x34] [OP_XOR]    [0x26]
     test [OP_1, OP_1, OP_EQUAL] [1]
     test [OP_1, OP_2, OP_EQUAL] [0]
+  describe "Crypto" $ do
+    testBS [0x1234] [OP_RIPEMD160] [0xC39867E393CB061B837240862D9AD318C176A96D]
+    testBS [0x1234] [OP_SHA1]      [0xFFA76D854A2969E7B9D83868D455512FCE0FD74D]
+    testBS
+      [0x1234]
+      [OP_SHA256]
+      [0x3A103A4E5729AD68C02A678AE39ACCFBC0AE208096437401B7CEAB63CCA0622F]
+    testBS [0x1234] [OP_HASH160] [0xC9440A6FF7E66BE6CE4A3524A7C44F292A631533]
+    testBS
+      [0x1234]
+      [OP_HASH256]
+      [0xA23421F2BA909C885A3077BB6F8EB4312487797693BBCFE7E311F797E3C5B8FA]
 
 test :: [ScriptOp] -> [BN] -> SpecWith (Arg Expectation)
 test ops expected_elems =
@@ -110,18 +122,26 @@ test ops expected_elems =
                , Nothing
                )
 
-testBS :: [[Word8]] -> [ScriptOp] -> [[Word8]] -> SpecWith (Arg Expectation)
-testBS push_elems ops expected_elems =
+ftestBS
+  :: (a -> BS.ByteString)
+  -> [a]
+  -> [ScriptOp]
+  -> [a]
+  -> SpecWith (Arg Expectation)
+ftestBS f push_elems ops expected_elems =
   it ("returns " ++ show (hex <$> expected) ++ " given " ++ show_ops)
     $          (hex <$> stack (fst $ interpret $ Script all_ops))
     `shouldBe` Seq.fromList (hex <$> expected)
  where
-  packed   = BS.pack <$> push_elems
-  expected = BS.pack <$> expected_elems
+  packed   = f <$> push_elems
+  expected = f <$> expected_elems
   all_ops  = map (\xs -> OP_PUSHDATA xs OPCODE) packed ++ ops
   showpush xs = "OP_PUSHDATA " ++ show (hex xs)
   show_ops =
     "[" ++ intercalate "," (map showpush packed ++ map show ops) ++ "]"
+
+testBS :: [Integer] -> [ScriptOp] -> [Integer] -> SpecWith (Arg Expectation)
+testBS = ftestBS (BS.reverse . BS.pack . unroll)
 
 unbalancedConditional :: [ScriptOp] -> SpecWith (Arg Expectation)
 unbalancedConditional ops =
