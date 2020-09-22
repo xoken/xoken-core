@@ -49,9 +49,8 @@ spec = do
     test [OP_2, OP_1, OP_3, OP_WITHIN] [1]
     test [OP_1, OP_4, OP_LSHIFT]       [16]
     test [OP_16, OP_2DIV]              [8]
-    it "returns [] given [OP_NOP1] and no flags"
-      $          interpretWith empty_env (Script [OP_NOP1])
-      `shouldBe` (empty_env, Nothing)
+    testNoFlags Nothing         [OP_NOP1]
+    testNoFlags (Just OpReturn) [OP_RETURN]
   describe "interpret failure" $ do
     terminatesWith StackUnderflow          [OP_DROP]
     terminatesWith (NoDecoding 1 BS.empty) [OP_PUSHDATA BS.empty OPDATA1]
@@ -151,5 +150,12 @@ terminatesWith error ops =
   it ("returns " ++ show error ++ " given " ++ show ops)
     $          snd (interpret (Script ops))
     `shouldBe` (Just error)
+
+testNoFlags
+  :: Maybe InterpreterError -> [ScriptOp] -> SpecWith (Arg Expectation)
+testNoFlags r ops =
+  it ("returns [] given " ++ show ops ++ " and no flags")
+    $          interpretWith empty_env (Script ops)
+    `shouldBe` (empty_env, r)
 
 hex = toLazyByteString . byteStringHex

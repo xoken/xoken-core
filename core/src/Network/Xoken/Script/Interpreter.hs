@@ -94,8 +94,9 @@ opcode OP_ELSE                  = popbranch >>= \b -> if is_else_branch b
     (Branch { satisfied = not $ satisfied b, is_else_branch = True })
 opcode OP_ENDIF  = popbranch >> pure ()
 opcode OP_VERIFY = pop >>= \x -> when (num x == 0) (terminate Verify)
-opcode OP_RETURN =
-  stacksize >>= \s -> when (s == 0) success >> nontoplevelreturn
+opcode OP_RETURN = flags >>= \fs -> if get UTXO_AFTER_GENESIS fs
+  then stacksize >>= \s -> when (s == 0) success >> nontoplevelreturn
+  else terminate OpReturn
 -- Stack operations
 opcode OP_TOALTSTACK   = pop >>= pushalt
 opcode OP_FROMALTSTACK = popalt >>= push
