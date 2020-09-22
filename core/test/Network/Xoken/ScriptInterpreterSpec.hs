@@ -16,6 +16,9 @@ import           Network.Xoken.Script.Interpreter
 import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
+interpret :: Script -> (Env, Maybe InterpreterError)
+interpret = interpretWith [GENESIS, UTXO_AFTER_GENESIS]
+
 spec :: Spec
 spec = do
   describe "interpret whole script" $ do

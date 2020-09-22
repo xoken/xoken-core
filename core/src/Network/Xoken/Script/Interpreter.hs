@@ -9,6 +9,10 @@ import           Data.Bits                      ( complement
                                                 , shiftL
                                                 , shiftR
                                                 )
+import           Data.EnumBitSet                ( T
+                                                , fromEnums
+                                                , get
+                                                )
 import           Control.Monad                  ( sequence_
                                                 , when
                                                 )
@@ -25,8 +29,29 @@ import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
-interpret :: Script -> (Env, Maybe InterpreterError)
-interpret script = go (scriptOps script) empty_env where
+data ScriptFlags
+  = VERIFY_NONE
+  | VERIFY_P2SH
+  | VERIFY_STRICTENC
+  | VERIFY_DERSIG
+  | VERIFY_LOW_S
+  | VERIFY_NULLDUMMY
+  | VERIFY_SIGPUSHONLY
+  | VERIFY_MINIMALDATA
+  | VERIFY_DISCOURAGE_UPGRADABLE_NOPS
+  | VERIFY_CLEANSTACK
+  | VERIFY_CHECKLOCKTIMEVERIFY
+  | VERIFY_CHECKSEQUENCEVERIFY
+  | VERIFY_MINIMALIF
+  | VERIFY_NULLFAIL
+  | VERIFY_COMPRESSED_PUBKEYTYPE
+  | ENABLE_SIGHASH_FORKID
+  | GENESIS
+  | UTXO_AFTER_GENESIS
+  deriving (Enum)
+
+interpretWith :: [ScriptFlags] -> Script -> (Env, Maybe InterpreterError)
+interpretWith specs script = go (scriptOps script) empty_env where
   go (op : rest) e
     | failed_branches e == 0 && not (non_top_level_return e) = next $ opcode op
     | otherwise = case op of
@@ -44,6 +69,7 @@ interpret script = go (scriptOps script) empty_env where
       (e', Return     ) -> (e', Nothing)
     failed_branch = Branch { satisfied = False, is_else_branch = False }
   go [] e = (e, Nothing)
+  flags = fromEnums specs :: T Word ScriptFlags
 
 empty_env = Env { stack                = Seq.empty
                 , alt_stack            = Seq.empty

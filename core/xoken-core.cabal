@@ -98,6 +98,7 @@ library
     , monad-loops
     , serialise
     , free
+    , enumset
   default-language: Haskell2010
 
 test-suite spec
@@ -187,5 +188,6 @@ test-suite spec
     , transformers
     , conduit
     , free
+    , enumset
   default-language: Haskell2010
   build-tool-depends: hspec-discover:hspec-discover
