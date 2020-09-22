@@ -58,6 +58,7 @@ data InterpreterError
   | UnbalancedConditional
   | InvalidAltstackOperation
   | InvalidNumberRange
+  | InvalidSplitRange
   | InvalidOperandSize
   | Verify
   | EqualVerify

@@ -120,8 +120,11 @@ opcode OP_SWAP  = arrange 2 (\[x1, x2] -> [x2, x1])
 opcode OP_TUCK  = arrange 2 (\[x1, x2] -> [x2, x1, x2])
 -- Data manipulation
 opcode OP_CAT   = binary BS.append
-opcode OP_SPLIT = popn 2 >>= \[x1, x2] -> bn2u32 (num x2)
-  >>= \n -> let (y1, y2) = BS.splitAt (fromIntegral n) x1 in pushn [y1, y2]
+opcode OP_SPLIT = popn 2 >>= \[x1, x2] -> do
+  let n = num x2
+  if n < 0 || n > fromIntegral (BS.length x1)
+    then terminate InvalidSplitRange
+    else let (y1, y2) = BS.splitAt (fromIntegral n) x1 in pushn [y1, y2]
 opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] -> bn2u32 x2
   >>= \length -> maybe (terminate ConversionError) push (num2binpad x1 length)
 opcode OP_BIN2NUM = pop >>= push . bin . num

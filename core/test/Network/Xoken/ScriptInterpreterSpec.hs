@@ -92,6 +92,10 @@ spec = do
     testBS []           [OP_0, OP_0, OP_CAT] [0x0]
     testBS [0x12, 0x34] [OP_CAT]             [0x1234]
     testBS [0x1234]     [OP_1, OP_SPLIT]     [0x12, 0x34]
+    terminatesWith InvalidSplitRange
+                   [opPushData $ rawNumToBS 0x1234, OP_1NEGATE, OP_SPLIT]
+    terminatesWith InvalidSplitRange
+                   [opPushData $ rawNumToBS 0x1234, OP_3, OP_SPLIT]
   describe "Bitwise logic" $ do
     testBS [0x1234]     [OP_INVERT] [0xEDCB]
     testBS [0x12, 0x34] [OP_AND]    [0x10]
@@ -146,7 +150,7 @@ ftestBS f push_elems ops expected_elems =
     "[" ++ intercalate "," (map showpush packed ++ map show ops) ++ "]"
 
 testBS :: [Integer] -> [ScriptOp] -> [Integer] -> SpecWith (Arg Expectation)
-testBS = ftestBS (BS.reverse . BS.pack . unroll)
+testBS = ftestBS rawNumToBS
 
 terminatesWith :: InterpreterError -> [ScriptOp] -> SpecWith (Arg Expectation)
 terminatesWith error ops =
@@ -161,4 +165,5 @@ testNoFlags r ops =
     $          interpretWith empty_env (Script ops)
     `shouldBe` (empty_env, r)
 
+rawNumToBS = BS.reverse . BS.pack . unroll
 hex = toLazyByteString . byteStringHex
