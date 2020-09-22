@@ -146,13 +146,15 @@ opcode OP_0NOTEQUAL = unaryarith (truth . (/= 0))
 opcode OP_ADD       = binaryarith (+)
 opcode OP_SUB       = binaryarith (-)
 opcode OP_MUL       = binaryarith (*)
-opcode OP_DIV       = binaryarith div
-opcode OP_MOD       = binaryarith mod
-opcode OP_LSHIFT    = shift shiftL
-opcode OP_RSHIFT    = shift shiftR
-opcode OP_BOOLAND   = binaryarith (\a b -> truth (a /= 0 && b /= 0))
-opcode OP_BOOLOR    = binaryarith (\a b -> truth (a /= 0 || b /= 0))
-opcode OP_NUMEQUAL  = binaryarith (btruth (==))
+opcode OP_DIV       = popn 2 >>= arith >>= \[x1, x2] ->
+  if x2 == 0 then terminate DivByZero else push $ bin $ x1 `div` x2
+opcode OP_MOD = popn 2 >>= arith >>= \[x1, x2] ->
+  if x2 == 0 then terminate ModByZero else push $ bin $ x1 `mod` x2
+opcode OP_LSHIFT   = shift shiftL
+opcode OP_RSHIFT   = shift shiftR
+opcode OP_BOOLAND  = binaryarith (\a b -> truth (a /= 0 && b /= 0))
+opcode OP_BOOLOR   = binaryarith (\a b -> truth (a /= 0 || b /= 0))
+opcode OP_NUMEQUAL = binaryarith (btruth (==))
 opcode OP_NUMEQUALVERIFY =
   popn 2 >>= arith >>= \[x1, x2] -> when (x1 /= x2) (terminate NumEqualVerify)
 opcode OP_NUMNOTEQUAL        = binaryarith (btruth (/=))
