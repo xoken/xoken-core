@@ -18,7 +18,12 @@ import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
 env = empty_env
-  { script_flags = fromEnums [GENESIS, UTXO_AFTER_GENESIS, VERIFY_MINIMALIF]
+  { script_flags = fromEnums
+                     [ GENESIS
+                     , UTXO_AFTER_GENESIS
+                     , VERIFY_MINIMALIF
+                     , VERIFY_DISCOURAGE_UPGRADABLE_NOPS
+                     ]
   }
 interpret = interpretWith env
 
@@ -44,6 +49,9 @@ spec = do
     test [OP_2, OP_1, OP_3, OP_WITHIN] [1]
     test [OP_1, OP_4, OP_LSHIFT]       [16]
     test [OP_16, OP_2DIV]              [8]
+    it "returns [] given [OP_NOP1] and no flags"
+      $          interpretWith empty_env (Script [OP_NOP1])
+      `shouldBe` (empty_env, Nothing)
   describe "interpret failure" $ do
     terminatesWith StackUnderflow          [OP_DROP]
     terminatesWith (NoDecoding 1 BS.empty) [OP_PUSHDATA BS.empty OPDATA1]
@@ -66,6 +74,7 @@ spec = do
     terminatesWith InvalidOperandSize       [OP_0, OP_1, OP_AND]
     terminatesWith MinimalIf                [OP_2, OP_IF, OP_ENDIF]
     terminatesWith MinimalIf                [opPushData (BS.pack [1, 2]), OP_IF]
+    terminatesWith DiscourageUpgradableNOPs [OP_NOP1]
   describe "interpret control flow" $ do
     test [OP_0, OP_IF, OP_ENDIF]                      []
     test [OP_0, OP_IF, OP_ELSE, OP_ENDIF]             []

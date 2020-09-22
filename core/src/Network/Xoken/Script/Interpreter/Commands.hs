@@ -63,6 +63,7 @@ data InterpreterError
   | EqualVerify
   | NumEqualVerify
   | MinimalIf
+  | DiscourageUpgradableNOPs
   | BadOpcode ScriptOp
   deriving (Show, Eq)
 

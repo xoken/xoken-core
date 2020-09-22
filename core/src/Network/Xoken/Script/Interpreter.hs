@@ -183,16 +183,16 @@ opcode (OP_INVALIDOPCODE n) = terminate (BadOpcode (OP_INVALIDOPCODE n))
 opcode OP_RESERVED          = terminate (BadOpcode OP_RESERVED)
 opcode OP_RESERVED1         = terminate (BadOpcode OP_RESERVED1)
 opcode OP_RESERVED2         = terminate (BadOpcode OP_RESERVED2)
-opcode OP_NOP1              = pure ()
-opcode OP_NOP2              = pure ()
-opcode OP_NOP3              = pure ()
-opcode OP_NOP4              = pure ()
-opcode OP_NOP5              = pure ()
-opcode OP_NOP6              = pure ()
-opcode OP_NOP7              = pure ()
-opcode OP_NOP8              = pure ()
-opcode OP_NOP9              = pure ()
-opcode OP_NOP10             = pure ()
+opcode OP_NOP1              = nop
+opcode OP_NOP2              = nop
+opcode OP_NOP3              = nop
+opcode OP_NOP4              = nop
+opcode OP_NOP5              = nop
+opcode OP_NOP6              = nop
+opcode OP_NOP7              = nop
+opcode OP_NOP8              = nop
+opcode OP_NOP9              = nop
+opcode OP_NOP10             = nop
 
 pushint :: Int -> Cmd ()
 pushint = push . bin . BN . fromIntegral
@@ -252,6 +252,7 @@ shift f = popn 2 >>= arith >>= \[x1, x2] ->
   maxInt = maxBound :: Int
   max    = fromIntegral maxInt
 
+ifcmd :: (Elem -> Bool) -> Cmd ()
 ifcmd is_satisfied = stacksize >>= \case
   0 -> terminate UnbalancedConditional
   _ -> do
@@ -262,3 +263,7 @@ ifcmd is_satisfied = stacksize >>= \case
       (get VERIFY_MINIMALIF fs && (n > 1 || (n == 1 && x /= BS.singleton 1)))
       (terminate MinimalIf)
     pushbranch (Branch { satisfied = is_satisfied x, is_else_branch = False })
+
+nop :: Cmd ()
+nop = flags >>= \fs -> when (get VERIFY_DISCOURAGE_UPGRADABLE_NOPS fs)
+                            (terminate DiscourageUpgradableNOPs)
