@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module Network.Xoken.Script.Interpreter where
 
 import           Data.Word                      ( Word8 )
@@ -9,9 +10,8 @@ import           Data.Bits                      ( complement
                                                 , shiftL
                                                 , shiftR
                                                 )
-import           Data.EnumBitSet                ( T
-                                                , fromEnums
-                                                , get
+import           Data.EnumBitSet                ( get
+                                                , empty
                                                 )
 import           Control.Monad                  ( sequence_
                                                 , when
@@ -29,29 +29,8 @@ import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
-data ScriptFlags
-  = VERIFY_NONE
-  | VERIFY_P2SH
-  | VERIFY_STRICTENC
-  | VERIFY_DERSIG
-  | VERIFY_LOW_S
-  | VERIFY_NULLDUMMY
-  | VERIFY_SIGPUSHONLY
-  | VERIFY_MINIMALDATA
-  | VERIFY_DISCOURAGE_UPGRADABLE_NOPS
-  | VERIFY_CLEANSTACK
-  | VERIFY_CHECKLOCKTIMEVERIFY
-  | VERIFY_CHECKSEQUENCEVERIFY
-  | VERIFY_MINIMALIF
-  | VERIFY_NULLFAIL
-  | VERIFY_COMPRESSED_PUBKEYTYPE
-  | ENABLE_SIGHASH_FORKID
-  | GENESIS
-  | UTXO_AFTER_GENESIS
-  deriving (Enum)
-
-interpretWith :: [ScriptFlags] -> Script -> (Env, Maybe InterpreterError)
-interpretWith specs script = go (scriptOps script) empty_env where
+interpretWith :: Env -> Script -> (Env, Maybe InterpreterError)
+interpretWith env script = go (scriptOps script) env where
   go (op : rest) e
     | failed_branches e == 0 && not (non_top_level_return e) = next $ opcode op
     | otherwise = case op of
@@ -69,13 +48,13 @@ interpretWith specs script = go (scriptOps script) empty_env where
       (e', Return     ) -> (e', Nothing)
     failed_branch = Branch { satisfied = False, is_else_branch = False }
   go [] e = (e, Nothing)
-  flags = fromEnums specs :: T Word ScriptFlags
 
 empty_env = Env { stack                = Seq.empty
                 , alt_stack            = Seq.empty
                 , branch_stack         = Seq.empty
                 , failed_branches      = 0
                 , non_top_level_return = False
+                , script_flags         = empty
                 }
 
 opcode :: ScriptOp -> Cmd ()
@@ -105,17 +84,11 @@ opcode OP_16                    = pushint 16
 -- Flow control
 opcode OP_NOP                   = pure ()
 opcode OP_VER                   = terminate (Unimplemented OP_VER)
-opcode OP_IF                    = stacksize >>= \s -> if s == 0
-  then terminate UnbalancedConditional
-  else pop >>= \x ->
-    pushbranch (Branch { satisfied = num x /= 0, is_else_branch = False })
-opcode OP_NOTIF = stacksize >>= \s -> if s == 0
-  then terminate UnbalancedConditional
-  else pop >>= \x ->
-    pushbranch (Branch { satisfied = num x == 0, is_else_branch = False })
-opcode OP_VERIF    = terminate (Unimplemented OP_VERIF)
-opcode OP_VERNOTIF = terminate (Unimplemented OP_VERNOTIF)
-opcode OP_ELSE     = popbranch >>= \b -> if is_else_branch b
+opcode OP_IF                    = ifcmd ((/= 0) . num)
+opcode OP_NOTIF                 = ifcmd ((== 0) . num)
+opcode OP_VERIF                 = terminate (Unimplemented OP_VERIF)
+opcode OP_VERNOTIF              = terminate (Unimplemented OP_VERNOTIF)
+opcode OP_ELSE                  = popbranch >>= \b -> if is_else_branch b
   then terminate UnbalancedConditional
   else pushbranch
     (Branch { satisfied = not $ satisfied b, is_else_branch = True })
@@ -278,3 +251,14 @@ shift f = popn 2 >>= arith >>= \[x1, x2] ->
              | True     = reduce (f x maxInt) (n - max)
   maxInt = maxBound :: Int
   max    = fromIntegral maxInt
+
+ifcmd is_satisfied = stacksize >>= \case
+  0 -> terminate UnbalancedConditional
+  _ -> do
+    x  <- pop
+    fs <- flags
+    let n = BS.length x
+    when
+      (get VERIFY_MINIMALIF fs && (n > 1 || (n == 1 && x /= BS.singleton 1)))
+      (terminate MinimalIf)
+    pushbranch (Branch { satisfied = is_satisfied x, is_else_branch = False })

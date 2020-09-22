@@ -1,8 +1,12 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Network.Xoken.Script.Interpreter.Commands where
 
 import           Data.Word                      ( Word8
                                                 , Word32
+                                                )
+import           Data.EnumBitSet                ( T
+                                                , toEnums
                                                 )
 import           Data.Foldable                  ( toList )
 import           Control.Monad.Free             ( Free(Pure, Free)
@@ -15,6 +19,7 @@ import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
 type Elem = BS.ByteString
 type Stack a = Seq.Seq a
+type Flags = T Word ScriptFlags
 
 data InterpreterCommands a
     -- signal
@@ -38,6 +43,8 @@ data InterpreterCommands a
     | PopBranch (Branch -> a)
     -- num
     | Num2u32 BN (Word32 -> a)
+    -- flags
+    | Flags (Flags -> a)
     deriving (Functor)
 
 type Cmd = Free InterpreterCommands
@@ -55,6 +62,7 @@ data InterpreterError
   | Verify
   | EqualVerify
   | NumEqualVerify
+  | MinimalIf
   | BadOpcode ScriptOp
   deriving (Show, Eq)
 
@@ -64,7 +72,32 @@ data Env = Env
   , branch_stack :: Stack Branch
   , failed_branches :: Word32
   , non_top_level_return :: Bool
+  , script_flags :: Flags
   } deriving (Show, Eq)
+
+instance Show Flags where
+  show = show . toEnums
+
+data ScriptFlags
+  = VERIFY_NONE
+  | VERIFY_P2SH
+  | VERIFY_STRICTENC
+  | VERIFY_DERSIG
+  | VERIFY_LOW_S
+  | VERIFY_NULLDUMMY
+  | VERIFY_SIGPUSHONLY
+  | VERIFY_MINIMALDATA
+  | VERIFY_DISCOURAGE_UPGRADABLE_NOPS
+  | VERIFY_CLEANSTACK
+  | VERIFY_CHECKLOCKTIMEVERIFY
+  | VERIFY_CHECKSEQUENCEVERIFY
+  | VERIFY_MINIMALIF
+  | VERIFY_NULLFAIL
+  | VERIFY_COMPRESSED_PUBKEYTYPE
+  | ENABLE_SIGHASH_FORKID
+  | GENESIS
+  | UTXO_AFTER_GENESIS
+  deriving (Show, Enum)
 
 data Branch = Branch
   { satisfied :: Bool
@@ -133,6 +166,8 @@ interpretCmd = go where
     Num2u32 n k -> case num2u32 n of
       Just u -> go (k u) e
       _      -> (e, Error InvalidNumberRange)
+    -- flags
+    Flags k -> go (k $ script_flags e) e
 
 -- signal
 terminate :: InterpreterError -> Cmd ()
@@ -186,3 +221,7 @@ popbranch = liftF (PopBranch id)
 -- num
 bn2u32 :: BN -> Cmd Word32
 bn2u32 n = liftF (Num2u32 n id)
+
+-- flags
+flags :: Cmd Flags
+flags = liftF (Flags id)

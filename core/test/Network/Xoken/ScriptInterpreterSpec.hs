@@ -5,6 +5,7 @@ where
 
 import           Data.List                      ( intercalate )
 import           Data.Word                      ( Word8 )
+import           Data.EnumBitSet                ( fromEnums )
 import           Data.ByteString.Builder        ( toLazyByteString
                                                 , byteStringHex
                                                 )
@@ -16,8 +17,10 @@ import           Network.Xoken.Script.Interpreter
 import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
-interpret :: Script -> (Env, Maybe InterpreterError)
-interpret = interpretWith [GENESIS, UTXO_AFTER_GENESIS]
+env = empty_env
+  { script_flags = fromEnums [GENESIS, UTXO_AFTER_GENESIS, VERIFY_MINIMALIF]
+  }
+interpret = interpretWith env
 
 spec :: Spec
 spec = do
@@ -42,39 +45,27 @@ spec = do
     test [OP_1, OP_4, OP_LSHIFT]       [16]
     test [OP_16, OP_2DIV]              [8]
   describe "interpret failure" $ do
-    it "returns StackUnderflow given [OP_DROP]"
-      $          interpret (Script [OP_DROP])
-      `shouldBe` (empty_env, Just StackUnderflow)
-    it "returns NoDecoding given [OP_PUSHDATA BS.empty OPDATA1]"
-      $          interpret (Script [OP_PUSHDATA BS.empty OPDATA1])
-      `shouldBe` (empty_env, Just $ NoDecoding 1 BS.empty)
-    it "returns NoDecoding given [OP_PUSHDATA BS.empty OPDATA2]"
-      $          interpret (Script [OP_PUSHDATA BS.empty OPDATA2])
-      `shouldBe` (empty_env, Just $ NoDecoding 2 BS.empty)
-    it "returns NoDecoding given [OP_PUSHDATA BS.empty OPDATA4]"
-      $          interpret (Script [OP_PUSHDATA BS.empty OPDATA4])
-      `shouldBe` (empty_env, Just $ NoDecoding 4 BS.empty)
-    it "returns NotEnoughBytes given [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1]"
-      $          interpret (Script [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1])
-      `shouldBe` (empty_env, Just $ NotEnoughBytes { expected = 2, actual = 1 })
-    unbalancedConditional [OP_IF]
-    unbalancedConditional [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
-    unbalancedConditional [OP_ELSE]
-    unbalancedConditional [OP_ENDIF]
-    unbalancedConditional
-      [OP_1, OP_IF, OP_IF, OP_ENDIF, OP_ELSE, OP_2, OP_ENDIF]
-    unbalancedConditional
-      [OP_0, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF]
-    unbalancedConditional [OP_0, OP_RETURN, OP_ELSE]
-    it "returns InvalidAltstackOperation given [OP_FROMALTSTACK]"
-      $          interpret (Script [OP_FROMALTSTACK])
-      `shouldBe` (empty_env, Just InvalidAltstackOperation)
-    it "returns InvalidNumberRange given [OP_1, OP_1NEGATE, OP_LSHIFT]"
-      $          interpret (Script [OP_1, OP_1NEGATE, OP_LSHIFT])
-      `shouldBe` (empty_env, Just InvalidNumberRange)
-    it "returns InvalidOperandSize given [OP_0, OP_1, OP_AND]"
-      $          interpret (Script [OP_0, OP_1, OP_AND])
-      `shouldBe` (empty_env, Just InvalidOperandSize)
+    terminatesWith StackUnderflow          [OP_DROP]
+    terminatesWith (NoDecoding 1 BS.empty) [OP_PUSHDATA BS.empty OPDATA1]
+    terminatesWith (NoDecoding 2 BS.empty) [OP_PUSHDATA BS.empty OPDATA2]
+    terminatesWith (NoDecoding 4 BS.empty) [OP_PUSHDATA BS.empty OPDATA4]
+    terminatesWith (NotEnoughBytes { expected = 2, actual = 1 })
+                   [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1]
+    terminatesWith UnbalancedConditional [OP_IF]
+    terminatesWith UnbalancedConditional
+                   [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
+    terminatesWith UnbalancedConditional [OP_ELSE]
+    terminatesWith UnbalancedConditional [OP_ENDIF]
+    terminatesWith UnbalancedConditional
+                   [OP_1, OP_IF, OP_IF, OP_ENDIF, OP_ELSE, OP_2, OP_ENDIF]
+    terminatesWith UnbalancedConditional
+                   [OP_0, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF]
+    terminatesWith UnbalancedConditional    [OP_0, OP_RETURN, OP_ELSE]
+    terminatesWith InvalidAltstackOperation [OP_FROMALTSTACK]
+    terminatesWith InvalidNumberRange       [OP_1, OP_1NEGATE, OP_LSHIFT]
+    terminatesWith InvalidOperandSize       [OP_0, OP_1, OP_AND]
+    terminatesWith MinimalIf                [OP_2, OP_IF, OP_ENDIF]
+    terminatesWith MinimalIf                [opPushData (BS.pack [1, 2]), OP_IF]
   describe "interpret control flow" $ do
     test [OP_0, OP_IF, OP_ENDIF]                      []
     test [OP_0, OP_IF, OP_ELSE, OP_ENDIF]             []
@@ -123,9 +114,7 @@ test :: [ScriptOp] -> [BN] -> SpecWith (Arg Expectation)
 test ops expected_elems =
   it ("returns " ++ show expected_elems ++ " given " ++ show ops)
     $          interpret (Script ops)
-    `shouldBe` ( empty_env { stack = Seq.fromList $ bin <$> expected_elems }
-               , Nothing
-               )
+    `shouldBe` (env { stack = Seq.fromList $ bin <$> expected_elems }, Nothing)
 
 ftestBS
   :: (a -> BS.ByteString)
@@ -140,7 +129,7 @@ ftestBS f push_elems ops expected_elems =
  where
   packed   = f <$> push_elems
   expected = f <$> expected_elems
-  all_ops  = map (\xs -> OP_PUSHDATA xs OPCODE) packed ++ ops
+  all_ops  = map opPushData packed ++ ops
   showpush xs = "OP_PUSHDATA " ++ show (hex xs)
   show_ops =
     "[" ++ intercalate "," (map showpush packed ++ map show ops) ++ "]"
@@ -148,10 +137,10 @@ ftestBS f push_elems ops expected_elems =
 testBS :: [Integer] -> [ScriptOp] -> [Integer] -> SpecWith (Arg Expectation)
 testBS = ftestBS (BS.reverse . BS.pack . unroll)
 
-unbalancedConditional :: [ScriptOp] -> SpecWith (Arg Expectation)
-unbalancedConditional ops =
-  it ("returns UnbalancedConditional given " ++ show ops)
+terminatesWith :: InterpreterError -> [ScriptOp] -> SpecWith (Arg Expectation)
+terminatesWith error ops =
+  it ("returns " ++ show error ++ " given " ++ show ops)
     $          snd (interpret (Script ops))
-    `shouldBe` (Just UnbalancedConditional)
+    `shouldBe` (Just error)
 
 hex = toLazyByteString . byteStringHex
