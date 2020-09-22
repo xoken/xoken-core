@@ -88,6 +88,7 @@ spec = do
     it "decode -1" $ num (BS.pack [129]) `shouldBe` -1
     it "decode 256" $ num (BS.pack [0, 1]) `shouldBe` 256
     it "decode -256" $ num (BS.pack [128, 1]) `shouldBe` -256
+    terminatesWith PushSize [OP_1, OP_1NEGATE, OP_NUM2BIN]
   describe "Data manipulation" $ do
     testBS []           [OP_0, OP_0, OP_CAT] [0x0]
     testBS [0x12, 0x34] [OP_CAT]             [0x1234]

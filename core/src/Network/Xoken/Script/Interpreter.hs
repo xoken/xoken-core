@@ -125,8 +125,12 @@ opcode OP_SPLIT = popn 2 >>= \[x1, x2] -> do
   if n < 0 || n > fromIntegral (BS.length x1)
     then terminate InvalidSplitRange
     else let (y1, y2) = BS.splitAt (fromIntegral n) x1 in pushn [y1, y2]
-opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] -> bn2u32 x2
-  >>= \length -> maybe (terminate ConversionError) push (num2binpad x1 length)
+opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] ->
+  if x2 < 0 || x2 > fromIntegral (maxBound :: Int)
+    then terminate PushSize
+    else maybe (terminate ImpossibleEncoding)
+               push
+               (num2binpad x1 (fromIntegral x2))
 opcode OP_BIN2NUM = pop >>= push . bin . num
 opcode OP_SIZE    = peek >>= pushint . BS.length
 -- Bitwise logic

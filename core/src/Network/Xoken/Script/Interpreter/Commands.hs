@@ -53,7 +53,8 @@ data InterpreterError
   = StackUnderflow
   | NoDecoding {length_bytes :: Int, bytestring :: BS.ByteString}
   | NotEnoughBytes {expected :: Word8, actual :: Int}
-  | ConversionError
+  | ImpossibleEncoding
+  | PushSize
   | Unimplemented ScriptOp
   | UnbalancedConditional
   | InvalidAltstackOperation
