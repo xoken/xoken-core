@@ -28,6 +28,7 @@ module Network.Xoken.Script.Common
     , decodeOutputBS
     , decodeOutputScript
     , toP2SH
+    , pushDataType
     , isPushOp
     , opPushData
     , intToScriptOp
@@ -517,16 +518,20 @@ isPushOp op =
         OP_16 -> True
         _ -> False
 
+-- | Check optimal PushDataType for given length.
+pushDataType :: Int -> Maybe PushDataType
+pushDataType len
+    | len <= 0x4b = Just OPCODE
+    | len <= 0xff = Just OPDATA1
+    | len <= 0xffff = Just OPDATA2
+    | len <= 0xffffffff = Just OPDATA4
+    | otherwise = Nothing
+
 -- | Optimally encode data using one of the 4 types of data pushing opcodes.
 opPushData :: ByteString -> ScriptOp
-opPushData bs
-    | len <= 0x4b = OP_PUSHDATA bs OPCODE
-    | len <= 0xff = OP_PUSHDATA bs OPDATA1
-    | len <= 0xffff = OP_PUSHDATA bs OPDATA2
-    | len <= 0xffffffff = OP_PUSHDATA bs OPDATA4
-    | otherwise = error "opPushData: payload size too big"
-  where
-    len = B.length bs
+opPushData bs = case pushDataType (B.length bs) of
+    Just x -> OP_PUSHDATA bs x
+    _ -> error "opPushData: payload size too big"
 
 -- | Transforms integers @[1 .. 16]@ to 'ScriptOp' @[OP_1 .. OP_16]@.
 intToScriptOp :: Int -> ScriptOp

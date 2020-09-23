@@ -62,36 +62,33 @@ empty_env = Env { stack                = Seq.empty
 
 opcode :: ScriptOp -> Cmd ()
 -- Pushing Data
-opcode OP_0                     = push $ BS.empty
-opcode (OP_PUSHDATA bs OPCODE ) = push bs
-opcode (OP_PUSHDATA bs OPDATA1) = pushdata 1 bs
-opcode (OP_PUSHDATA bs OPDATA2) = pushdata 2 bs
-opcode (OP_PUSHDATA bs OPDATA4) = pushdata 4 bs
-opcode OP_1NEGATE               = pushint (-1)
-opcode OP_1                     = pushint 1
-opcode OP_2                     = pushint 2
-opcode OP_3                     = pushint 3
-opcode OP_4                     = pushint 4
-opcode OP_5                     = pushint 5
-opcode OP_6                     = pushint 6
-opcode OP_7                     = pushint 7
-opcode OP_8                     = pushint 8
-opcode OP_9                     = pushint 9
-opcode OP_10                    = pushint 10
-opcode OP_11                    = pushint 11
-opcode OP_12                    = pushint 12
-opcode OP_13                    = pushint 13
-opcode OP_14                    = pushint 14
-opcode OP_15                    = pushint 15
-opcode OP_16                    = pushint 16
+opcode OP_0                  = push $ BS.empty
+opcode (OP_PUSHDATA bs size) = pushdata bs size
+opcode OP_1NEGATE            = pushint (-1)
+opcode OP_1                  = pushint 1
+opcode OP_2                  = pushint 2
+opcode OP_3                  = pushint 3
+opcode OP_4                  = pushint 4
+opcode OP_5                  = pushint 5
+opcode OP_6                  = pushint 6
+opcode OP_7                  = pushint 7
+opcode OP_8                  = pushint 8
+opcode OP_9                  = pushint 9
+opcode OP_10                 = pushint 10
+opcode OP_11                 = pushint 11
+opcode OP_12                 = pushint 12
+opcode OP_13                 = pushint 13
+opcode OP_14                 = pushint 14
+opcode OP_15                 = pushint 15
+opcode OP_16                 = pushint 16
 -- Flow control
-opcode OP_NOP                   = pure ()
-opcode OP_VER                   = terminate (Unimplemented OP_VER)
-opcode OP_IF                    = ifcmd ((/= 0) . num)
-opcode OP_NOTIF                 = ifcmd ((== 0) . num)
-opcode OP_VERIF                 = terminate (Unimplemented OP_VERIF)
-opcode OP_VERNOTIF              = terminate (Unimplemented OP_VERNOTIF)
-opcode OP_ELSE                  = popbranch >>= \b -> if is_else_branch b
+opcode OP_NOP                = pure ()
+opcode OP_VER                = terminate (Unimplemented OP_VER)
+opcode OP_IF                 = ifcmd ((/= 0) . num)
+opcode OP_NOTIF              = ifcmd ((== 0) . num)
+opcode OP_VERIF              = terminate (Unimplemented OP_VERIF)
+opcode OP_VERNOTIF           = terminate (Unimplemented OP_VERNOTIF)
+opcode OP_ELSE               = popbranch >>= \b -> if is_else_branch b
   then terminate UnbalancedConditional
   else pushbranch
     (Branch { satisfied = not $ satisfied b, is_else_branch = True })
@@ -122,21 +119,22 @@ opcode OP_ROT   = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
 opcode OP_SWAP  = arrange 2 (\[x1, x2] -> [x2, x1])
 opcode OP_TUCK  = arrange 2 (\[x1, x2] -> [x2, x1, x2])
 -- Data manipulation
-opcode OP_CAT   = popn 2 >>= \[x1, x2] -> flags >>= \fs ->
-  if exceedingMaxElemSize (BS.length x1 + BS.length x2) fs
-    then terminate PushSize
-    else push (BS.append x1 x2)
+opcode OP_CAT   = popn 2 >>= \[x1, x2] ->
+  exceedingMaxElemSize (BS.length x1 + BS.length x2) >>= \case
+    True -> terminate PushSize
+    _    -> push (BS.append x1 x2)
 opcode OP_SPLIT = popn 2 >>= \[x1, x2] -> do
   let n = num x2
   if n < 0 || n > fromIntegral (BS.length x1)
     then terminate InvalidSplitRange
     else let (y1, y2) = BS.splitAt (fromIntegral n) x1 in pushn [y1, y2]
-opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] -> flags >>= \fs ->
-  if x2 < 0 || x2 > fromIntegral (maxBound :: Int) || exceedingMaxElemSize x2 fs
-    then terminate PushSize
-    else maybe (terminate ImpossibleEncoding)
-               push
-               (num2binpad x1 (fromIntegral x2))
+opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] ->
+  exceedingMaxElemSize x2 >>= \tooBig ->
+    if x2 < 0 || x2 > fromIntegral (maxBound :: Int) || tooBig
+      then terminate PushSize
+      else maybe (terminate ImpossibleEncoding)
+                 push
+                 (num2binpad x1 (fromIntegral x2))
 opcode OP_BIN2NUM = pop >>= push . bin . num
 opcode OP_SIZE    = peek >>= pushint . BS.length
 -- Bitwise logic
@@ -216,21 +214,20 @@ pushint = push . bin . BN . fromIntegral
 pushn :: [Elem] -> Cmd ()
 pushn = sequence_ . map push
 
-pushdata :: Int -> BS.ByteString -> Cmd ()
-pushdata n bs = flags >>= \fs -> case S.decode bs1 of
-  Right bytes
-    | exceedingMaxElemSize (BS.length bs2) fs -> terminate PushSize
-    | fromIntegral bytes > BS.length bs2 -> terminate
-    $ NotEnoughBytes { expected = bytes, actual = BS.length bs2 }
-    | otherwise -> push bs2
-  _ -> terminate $ NoDecoding { length_bytes = n, bytestring = bs1 }
-  where (bs1, bs2) = BS.splitAt n bs
+pushdata :: BS.ByteString -> PushDataType -> Cmd ()
+pushdata bs size = case pushDataType (BS.length bs) of
+  Just optimal -> if size == optimal
+    then exceedingMaxElemSize (BS.length bs) >>= \case
+      True -> terminate PushSize
+      _    -> push bs
+    else terminate PushSize
+  _ -> terminate PushSize
 
-exceedingMaxElemSize :: Integral a => a -> Flags -> Bool
-exceedingMaxElemSize n fs =
-  not (get UTXO_AFTER_GENESIS fs)
-    && n
-    >  fromIntegral maxScriptElementSizeBeforeGenesis
+exceedingMaxElemSize :: Integral a => a -> Cmd Bool
+exceedingMaxElemSize n = flags >>= \fs -> pure
+  (  not (get UTXO_AFTER_GENESIS fs)
+  && (n > fromIntegral maxScriptElementSizeBeforeGenesis)
+  )
 
 arrange :: Int -> ([Elem] -> [Elem]) -> Cmd ()
 arrange n f = popn n >>= pushn . f

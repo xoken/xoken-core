@@ -46,12 +46,11 @@ spec = do
     testNoFlags Nothing         [OP_NOP1]
     testNoFlags (Just OpReturn) [OP_RETURN]
   describe "interpret failure" $ do
-    terminatesWith StackUnderflow          [OP_DROP]
-    terminatesWith (NoDecoding 1 BS.empty) [OP_PUSHDATA BS.empty OPDATA1]
-    terminatesWith (NoDecoding 2 BS.empty) [OP_PUSHDATA BS.empty OPDATA2]
-    terminatesWith (NoDecoding 4 BS.empty) [OP_PUSHDATA BS.empty OPDATA4]
-    terminatesWith (NotEnoughBytes { expected = 2, actual = 1 })
-                   [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1]
+    terminatesWith StackUnderflow        [OP_DROP]
+    terminatesWith PushSize              [OP_PUSHDATA BS.empty OPDATA1]
+    terminatesWith PushSize              [OP_PUSHDATA BS.empty OPDATA2]
+    terminatesWith PushSize              [OP_PUSHDATA BS.empty OPDATA4]
+    terminatesWith PushSize              [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1]
     terminatesWith UnbalancedConditional [OP_IF]
     terminatesWith UnbalancedConditional
                    [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
