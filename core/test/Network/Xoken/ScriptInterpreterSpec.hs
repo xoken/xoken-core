@@ -116,6 +116,8 @@ spec = do
     testPack [[1], [64]]    [OP_RSHIFT] [[0]]
     testPack [[1, 2], [64]] [OP_LSHIFT] [[0, 0]]
     testPack [[1, 2], [64]] [OP_RSHIFT] [[0, 0]]
+    testPack [[1], [7]]     [OP_LSHIFT] [[128]]
+    testPack [[1], [8]]     [OP_LSHIFT] [[0]]
     test [OP_16, OP_2DIV] [8]
     terminatesWith DivByZero [OP_0, OP_0, OP_DIV]
     terminatesWith ModByZero [OP_0, OP_0, OP_MOD]

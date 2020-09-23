@@ -10,6 +10,7 @@ import           Data.Bits                      ( complement
                                                 , shiftL
                                                 , shiftR
                                                 )
+import           Data.Bits.ByteString
 import           Data.EnumBitSet                ( get
                                                 , empty
                                                 )
@@ -266,16 +267,16 @@ num = bin2num
 bin :: BN -> Elem
 bin = num2bin
 
-shift :: (BN -> Int -> BN) -> Cmd ()
+shift :: (Elem -> Int -> Elem) -> Cmd ()
 shift f = popn 2 >>= \[x1, x2] -> do
   let n = num x2
   if n < 0
     then terminate InvalidNumberRange
     else if n >= fromIntegral (BS.length x1) * 8
-      then push (BS.pack $ replicate (BS.length x1) 0)
-      else go (num x1) n
+      then push (BS.replicate (BS.length x1) 0)
+      else go x1 n
  where
-  go x n | n <= max  = bn2u32 n >>= push . bin . f x . fromIntegral
+  go x n | n <= max  = bn2u32 n >>= push . f x . fromIntegral
          | otherwise = go (f x maxInt) (n - max)
   maxInt = maxBound :: Int
   max    = fromIntegral maxInt

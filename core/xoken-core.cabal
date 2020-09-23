@@ -99,6 +99,7 @@ library
     , serialise
     , free
     , enumset
+    , bits-bytestring
   default-language: Haskell2010
 
 test-suite spec
@@ -189,5 +190,6 @@ test-suite spec
     , conduit
     , free
     , enumset
+    , bits-bytestring
   default-language: Haskell2010
   build-tool-depends: hspec-discover:hspec-discover
