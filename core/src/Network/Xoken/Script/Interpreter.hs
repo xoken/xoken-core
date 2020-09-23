@@ -120,7 +120,7 @@ opcode OP_SWAP  = arrange 2 (\[x1, x2] -> [x2, x1])
 opcode OP_TUCK  = arrange 2 (\[x1, x2] -> [x2, x1, x2])
 -- Data manipulation
 opcode OP_CAT   = popn 2 >>= \[x1, x2] ->
-  exceedingMaxElemSize (BS.length x1 + BS.length x2) >>= \case
+  isOverMaxElemSize (BS.length x1 + BS.length x2) >>= \case
     True -> terminate PushSize
     _    -> push (BS.append x1 x2)
 opcode OP_SPLIT = popn 2 >>= \[x1, x2] -> do
@@ -129,7 +129,7 @@ opcode OP_SPLIT = popn 2 >>= \[x1, x2] -> do
     then terminate InvalidSplitRange
     else let (y1, y2) = BS.splitAt (fromIntegral n) x1 in pushn [y1, y2]
 opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] ->
-  exceedingMaxElemSize x2 >>= \tooBig ->
+  isOverMaxElemSize x2 >>= \tooBig ->
     if x2 < 0 || x2 > fromIntegral (maxBound :: Int) || tooBig
       then terminate PushSize
       else maybe (terminate ImpossibleEncoding)
@@ -215,19 +215,26 @@ pushn :: [Elem] -> Cmd ()
 pushn = sequence_ . map push
 
 pushdata :: BS.ByteString -> PushDataType -> Cmd ()
-pushdata bs size = case pushDataType (BS.length bs) of
-  Just optimal -> if size == optimal
-    then exceedingMaxElemSize (BS.length bs) >>= \case
-      True -> terminate PushSize
-      _    -> push bs
-    else terminate PushSize
-  _ -> terminate PushSize
+pushdata bs size = verifyminimaldata >>= \case
+  True -> maybe
+    (terminate MinimalData)
+    (\optimal -> if size == optimal then go else terminate MinimalData)
+    (pushDataType (BS.length bs))
+  _ -> go
+ where
+  go = isOverMaxElemSize (BS.length bs) >>= \case
+    True -> terminate PushSize
+    _    -> push bs
 
-exceedingMaxElemSize :: Integral a => a -> Cmd Bool
-exceedingMaxElemSize n = flags >>= \fs -> pure
-  (  not (get UTXO_AFTER_GENESIS fs)
-  && (n > fromIntegral maxScriptElementSizeBeforeGenesis)
-  )
+verifyminimaldata :: Cmd Bool
+verifyminimaldata = flags >>= pure . get VERIFY_MINIMALDATA
+
+aftergenesis :: Cmd Bool
+aftergenesis = flags >>= pure . get UTXO_AFTER_GENESIS
+
+isOverMaxElemSize :: Integral a => a -> Cmd Bool
+isOverMaxElemSize n = aftergenesis >>= pure . isOver
+  where isOver = (&& n > fromIntegral maxScriptElementSizeBeforeGenesis)
 
 arrange :: Int -> ([Elem] -> [Elem]) -> Cmd ()
 arrange n f = popn n >>= pushn . f

@@ -23,13 +23,23 @@ env = empty_env
                      , UTXO_AFTER_GENESIS
                      , VERIFY_MINIMALIF
                      , VERIFY_DISCOURAGE_UPGRADABLE_NOPS
+                     , VERIFY_MINIMALDATA
                      ]
   }
 interpret = interpretWith env
 
 spec :: Spec
 spec = do
-  describe "interpret whole script" $ do
+  describe "pushdata" $ do
+    testNoFlags Nothing [OP_PUSHDATA BS.empty OPDATA1]
+    testNoFlags Nothing [OP_PUSHDATA BS.empty OPDATA2]
+    testNoFlags Nothing [OP_PUSHDATA BS.empty OPDATA4]
+    testNoFlags Nothing [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1]
+    terminatesWith MinimalData [OP_PUSHDATA BS.empty OPDATA1]
+    terminatesWith MinimalData [OP_PUSHDATA BS.empty OPDATA1]
+    terminatesWith MinimalData [OP_PUSHDATA BS.empty OPDATA1]
+    terminatesWith MinimalData [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1]
+  describe "stack" $ do
     test []                          []
     test [OP_1]                      [1]
     test [OP_1, OP_2]                [1, 2]
@@ -43,14 +53,10 @@ spec = do
     test [OP_1, OP_2, OP_1, OP_ROLL] [2, 1]
     test [OP_1, OP_TOALTSTACK, OP_FROMALTSTACK] [1]
     test [OP_1, OP_TOALTSTACK, OP_2, OP_FROMALTSTACK] [2, 1]
-    testNoFlags Nothing         [OP_NOP1]
-    testNoFlags (Just OpReturn) [OP_RETURN]
+  describe "interpreter extra" $ do
+    testNoFlags Nothing [OP_NOP1]
   describe "interpret failure" $ do
     terminatesWith StackUnderflow        [OP_DROP]
-    terminatesWith PushSize              [OP_PUSHDATA BS.empty OPDATA1]
-    terminatesWith PushSize              [OP_PUSHDATA BS.empty OPDATA2]
-    terminatesWith PushSize              [OP_PUSHDATA BS.empty OPDATA4]
-    terminatesWith PushSize              [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1]
     terminatesWith UnbalancedConditional [OP_IF]
     terminatesWith UnbalancedConditional
                    [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
@@ -76,6 +82,7 @@ spec = do
     test [OP_0, OP_IF, OP_IF, OP_ENDIF, OP_ELSE, OP_2, OP_ENDIF] [2]
     test [OP_1, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF] [1]
     test [OP_RETURN, OP_ELSE]                         []
+    testNoFlags (Just OpReturn) [OP_RETURN]
   describe "BN conversion" $ do
     it "encode 0" $ bin 0 `shouldBe` BS.pack []
     it "encode 1" $ bin 1 `shouldBe` BS.pack [1]
@@ -173,8 +180,8 @@ testNoFlags
   :: Maybe InterpreterError -> [ScriptOp] -> SpecWith (Arg Expectation)
 testNoFlags r ops =
   it ("returns [] given " ++ show ops ++ " and no flags")
-    $          interpretWith empty_env (Script ops)
-    `shouldBe` (empty_env, r)
+    $          snd (interpretWith empty_env (Script ops))
+    `shouldBe` r
 
 rawNumToBS = BS.reverse . BS.pack . unroll
 hex = toLazyByteString . byteStringHex

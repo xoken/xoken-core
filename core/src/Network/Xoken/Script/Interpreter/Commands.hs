@@ -63,6 +63,7 @@ data InterpreterError
   | EqualVerify
   | NumEqualVerify
   | MinimalIf
+  | MinimalData
   | DiscourageUpgradableNOPs
   | OpReturn
   | DivByZero
