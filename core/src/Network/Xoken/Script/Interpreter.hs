@@ -122,10 +122,7 @@ opcode OP_SWAP  = arrange 2 (\[x1, x2] -> [x2, x1])
 opcode OP_TUCK  = arrange 2 (\[x1, x2] -> [x2, x1, x2])
 -- Data manipulation
 opcode OP_CAT   = popn 2 >>= \[x1, x2] -> flags >>= \fs ->
-  if not (get UTXO_AFTER_GENESIS fs)
-       && BS.length x1
-       +  BS.length x2
-       >  maxScriptElementSizeBeforeGenesis
+  if exceedingMaxElemSize (BS.length x1 + BS.length x2) fs
     then terminate PushSize
     else push (BS.append x1 x2)
 opcode OP_SPLIT = popn 2 >>= \[x1, x2] -> do
@@ -270,11 +267,16 @@ bin :: BN -> Elem
 bin = num2bin
 
 shift :: (BN -> Int -> BN) -> Cmd ()
-shift f = popn 2 >>= arith >>= \[x1, x2] ->
-  if x2 < 0 then terminate InvalidNumberRange else reduce x1 x2
+shift f = popn 2 >>= \[x1, x2] -> do
+  let n = num x2
+  if n < 0
+    then terminate InvalidNumberRange
+    else if n >= fromIntegral (BS.length x1) * 8
+      then push (BS.pack $ replicate (BS.length x1) 0)
+      else go (num x1) n
  where
-  reduce x n | n <= max = bn2u32 n >>= push . bin . f x . fromIntegral
-             | True     = reduce (f x maxInt) (n - max)
+  go x n | n <= max  = bn2u32 n >>= push . bin . f x . fromIntegral
+         | otherwise = go (f x maxInt) (n - max)
   maxInt = maxBound :: Int
   max    = fromIntegral maxInt
 

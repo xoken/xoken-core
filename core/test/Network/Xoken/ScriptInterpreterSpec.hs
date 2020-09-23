@@ -110,7 +110,13 @@ spec = do
     test [OP_1, OP_2, OP_3, OP_WITHIN] [0]
     test [OP_2, OP_1, OP_3, OP_WITHIN] [1]
     test [OP_1, OP_4, OP_LSHIFT]       [16]
-    test [OP_16, OP_2DIV]              [8]
+    testPack [[], [64]]     [OP_LSHIFT] [[]]
+    testPack [[], [64]]     [OP_RSHIFT] [[]]
+    testPack [[1], [64]]    [OP_LSHIFT] [[0]]
+    testPack [[1], [64]]    [OP_RSHIFT] [[0]]
+    testPack [[1, 2], [64]] [OP_LSHIFT] [[0, 0]]
+    testPack [[1, 2], [64]] [OP_RSHIFT] [[0, 0]]
+    test [OP_16, OP_2DIV] [8]
     terminatesWith DivByZero [OP_0, OP_0, OP_DIV]
     terminatesWith ModByZero [OP_0, OP_0, OP_MOD]
   describe "Crypto" $ do
@@ -152,6 +158,9 @@ ftestBS f push_elems ops expected_elems =
 
 testBS :: [Integer] -> [ScriptOp] -> [Integer] -> SpecWith (Arg Expectation)
 testBS = ftestBS rawNumToBS
+
+testPack :: [[Word8]] -> [ScriptOp] -> [[Word8]] -> SpecWith (Arg Expectation)
+testPack = ftestBS (BS.pack)
 
 terminatesWith :: InterpreterError -> [ScriptOp] -> SpecWith (Arg Expectation)
 terminatesWith error ops =
