@@ -29,6 +29,8 @@ import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
+maxScriptElementSizeBeforeGenesis = 520
+
 interpretWith :: Env -> Script -> (Env, Maybe InterpreterError)
 interpretWith env script = go (scriptOps script) env where
   go (op : rest) e
@@ -119,14 +121,20 @@ opcode OP_ROT   = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
 opcode OP_SWAP  = arrange 2 (\[x1, x2] -> [x2, x1])
 opcode OP_TUCK  = arrange 2 (\[x1, x2] -> [x2, x1, x2])
 -- Data manipulation
-opcode OP_CAT   = binary BS.append
+opcode OP_CAT   = popn 2 >>= \[x1, x2] -> flags >>= \fs ->
+  if not (get UTXO_AFTER_GENESIS fs)
+       && BS.length x1
+       +  BS.length x2
+       >  maxScriptElementSizeBeforeGenesis
+    then terminate PushSize
+    else push (BS.append x1 x2)
 opcode OP_SPLIT = popn 2 >>= \[x1, x2] -> do
   let n = num x2
   if n < 0 || n > fromIntegral (BS.length x1)
     then terminate InvalidSplitRange
     else let (y1, y2) = BS.splitAt (fromIntegral n) x1 in pushn [y1, y2]
-opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] ->
-  if x2 < 0 || x2 > fromIntegral (maxBound :: Int)
+opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] -> flags >>= \fs ->
+  if x2 < 0 || x2 > fromIntegral (maxBound :: Int) || exceedingMaxElemSize x2 fs
     then terminate PushSize
     else maybe (terminate ImpossibleEncoding)
                push
@@ -211,12 +219,20 @@ pushn :: [Elem] -> Cmd ()
 pushn = sequence_ . map push
 
 pushdata :: Int -> BS.ByteString -> Cmd ()
-pushdata n bs = case S.decode bs1 of
-  Right bytes -> if fromIntegral bytes <= BS.length bs2
-    then push bs2
-    else terminate $ NotEnoughBytes { expected = bytes, actual = BS.length bs2 }
+pushdata n bs = flags >>= \fs -> case S.decode bs1 of
+  Right bytes
+    | exceedingMaxElemSize (BS.length bs2) fs -> terminate PushSize
+    | fromIntegral bytes > BS.length bs2 -> terminate
+    $ NotEnoughBytes { expected = bytes, actual = BS.length bs2 }
+    | otherwise -> push bs2
   _ -> terminate $ NoDecoding { length_bytes = n, bytestring = bs1 }
   where (bs1, bs2) = BS.splitAt n bs
+
+exceedingMaxElemSize :: Integral a => a -> Flags -> Bool
+exceedingMaxElemSize n fs =
+  not (get UTXO_AFTER_GENESIS fs)
+    && n
+    >  fromIntegral maxScriptElementSizeBeforeGenesis
 
 arrange :: Int -> ([Elem] -> [Elem]) -> Cmd ()
 arrange n f = popn n >>= pushn . f
