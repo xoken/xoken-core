@@ -2,7 +2,7 @@ cabal-version: 1.12
 
 
 name:           xoken-core
-version:        0.1.0
+version:        0.1.1
 synopsis:       Bitcoin SV Haskell library
 category:       Bitcoin, Network
 homepage:       http://github.com/stoichammer
@@ -65,6 +65,9 @@ library
       Network.Xoken.Transaction.Builder
       Network.Xoken.Script.Interpreter
       Paths_xoken_core
+      
+  ghc-options:  -fprof-auto -fprof-cafs -rtsopts -O2 -threaded -with-rtsopts=-N
+
   hs-source-dirs:
       src
   build-depends:
