@@ -141,8 +141,9 @@ spec = do
 test :: [ScriptOp] -> [BN] -> SpecWith (Arg Expectation)
 test ops expected_elems =
   it ("returns " ++ show expected_elems ++ " given " ++ show ops)
-    $          interpret (Script ops)
-    `shouldBe` (env { stack = Seq.fromList $ bin <$> expected_elems }, Nothing)
+    $          (stack env                            , r)
+    `shouldBe` (Seq.fromList $ bin <$> expected_elems, Nothing)
+  where (env, r) = interpret (Script ops)
 
 ftestBS
   :: (a -> BS.ByteString)

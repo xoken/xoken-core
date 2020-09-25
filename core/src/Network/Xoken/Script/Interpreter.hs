@@ -32,6 +32,12 @@ import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
 maxScriptElementSizeBeforeGenesis = 520
+sequenceLocktimeDisableFlag = 2 ^ 31
+
+maxScriptNumLength :: Bool -> Bool -> Int
+maxScriptNumLength genesis consensus | not genesis = 4
+                                     | consensus   = 750 * 1000
+                                     | otherwise   = 250 * 1000
 
 mandatoryScriptFlags :: ScriptFlags
 mandatoryScriptFlags = fromEnums
@@ -73,12 +79,13 @@ interpretWith env script = go (scriptOps script) env where
     failed_branch = Branch { satisfied = False, is_else_branch = False }
   go [] e = (e, Nothing)
 
-empty_env = Env { stack                = Seq.empty
-                , alt_stack            = Seq.empty
-                , branch_stack         = Seq.empty
-                , failed_branches      = 0
-                , non_top_level_return = False
-                , script_flags         = empty
+empty_env = Env { stack                  = Seq.empty
+                , alt_stack              = Seq.empty
+                , branch_stack           = Seq.empty
+                , failed_branches        = 0
+                , non_top_level_return   = False
+                , script_flags           = empty
+                , base_signature_checker = undefined
                 }
 
 opcode :: ScriptOp -> Cmd ()
@@ -219,15 +226,28 @@ opcode OP_RESERVED          = terminate (BadOpcode OP_RESERVED)
 opcode OP_RESERVED1         = terminate (BadOpcode OP_RESERVED1)
 opcode OP_RESERVED2         = terminate (BadOpcode OP_RESERVED2)
 opcode OP_NOP1              = nop
-opcode OP_NOP2              = nop
-opcode OP_NOP3              = nop
-opcode OP_NOP4              = nop
-opcode OP_NOP5              = nop
-opcode OP_NOP6              = nop
-opcode OP_NOP7              = nop
-opcode OP_NOP8              = nop
-opcode OP_NOP9              = nop
-opcode OP_NOP10             = nop
+opcode OP_NOP2              = maybenop
+  VERIFY_CHECKLOCKTIMEVERIFY
+  (pop >>= limitednum 5 >>= \n -> if n < 0
+    then terminate NegativeLocktime
+    else checker
+      >>= \c -> when (not $ checkLockTime c n) (terminate UnsatisfiedLockTime)
+  )
+opcode OP_NOP3 = maybenop
+  VERIFY_CHECKSEQUENCEVERIFY
+  (pop >>= limitednum 5 >>= \n -> if n < 0
+    then terminate NegativeLocktime
+    else checker >>= \c -> when
+      (n .&. sequenceLocktimeDisableFlag == 0 && not (checkSequence c n))
+      (terminate UnsatisfiedLockTime)
+  )
+opcode OP_NOP4  = nop
+opcode OP_NOP5  = nop
+opcode OP_NOP6  = nop
+opcode OP_NOP7  = nop
+opcode OP_NOP8  = nop
+opcode OP_NOP9  = nop
+opcode OP_NOP10 = nop
 
 pushint :: Int -> Cmd ()
 pushint = push . bin . BN . fromIntegral
@@ -321,3 +341,11 @@ ifcmd is_satisfied = stacksize >>= \case
 nop :: Cmd ()
 nop = flags >>= \fs -> when (get VERIFY_DISCOURAGE_UPGRADABLE_NOPS fs)
                             (terminate DiscourageUpgradableNOPs)
+
+maybenop :: ScriptFlag -> Cmd () -> Cmd ()
+maybenop flag cmd = flags >>= \fs ->
+  if (  (not (get flag fs) || get UTXO_AFTER_GENESIS fs)
+     && get VERIFY_DISCOURAGE_UPGRADABLE_NOPS fs
+     )
+    then (terminate DiscourageUpgradableNOPs)
+    else cmd

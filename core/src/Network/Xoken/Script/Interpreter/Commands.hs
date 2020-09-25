@@ -5,6 +5,7 @@ module Network.Xoken.Script.Interpreter.Commands where
 import           Data.Word                      ( Word8
                                                 , Word32
                                                 )
+import           Data.Int                       ( Int64 )
 import           Data.EnumBitSet                ( T
                                                 , toEnums
                                                 )
@@ -43,8 +44,10 @@ data InterpreterCommands a
     | PopBranch (Branch -> a)
     -- num
     | Num2u32 BN (Word32 -> a)
-    -- flags
+    | LimitedNum Int Elem (Int64 -> a)
+    -- field access
     | Flags (ScriptFlags -> a)
+    | Checker (BaseSignatureChecker -> a)
     deriving (Functor)
 
 type Cmd = Free InterpreterCommands
@@ -69,6 +72,9 @@ data InterpreterError
   | DivByZero
   | ModByZero
   | BadOpcode ScriptOp
+  | NumOverflow
+  | NegativeLocktime
+  | UnsatisfiedLockTime
   deriving (Show, Eq)
 
 data Env = Env
@@ -78,7 +84,18 @@ data Env = Env
   , failed_branches :: Word32
   , non_top_level_return :: Bool
   , script_flags :: ScriptFlags
-  } deriving (Show, Eq)
+  , base_signature_checker :: BaseSignatureChecker
+  }
+
+type Signature = Elem
+type PublicKey = Elem
+type EnabledSighashForkid = Bool
+
+data BaseSignatureChecker = BaseSignatureChecker
+  { checkSig :: Signature -> PublicKey -> Script -> EnabledSighashForkid -> Bool
+  , checkLockTime :: Int64 -> Bool
+  , checkSequence :: Int64 -> Bool
+  }
 
 instance Show ScriptFlags where
   show = show . toEnums
@@ -171,8 +188,12 @@ interpretCmd = go where
     Num2u32 n k -> case num2u32 n of
       Just u -> go (k u) e
       _      -> (e, Error InvalidNumberRange)
-    -- flags
-    Flags k -> go (k $ script_flags e) e
+    LimitedNum n x k -> if BS.length x <= n
+      then go (k $ fromIntegral $ (bin2num x :: BN)) e
+      else (e, Error NumOverflow)
+    -- field access
+    Flags   k -> go (k $ script_flags e) e
+    Checker k -> go (k $ base_signature_checker e) e
 
 -- signal
 terminate :: InterpreterError -> Cmd ()
@@ -227,6 +248,12 @@ popbranch = liftF (PopBranch id)
 bn2u32 :: BN -> Cmd Word32
 bn2u32 n = liftF (Num2u32 n id)
 
--- flags
+limitednum :: Int -> Elem -> Cmd Int64
+limitednum n x = liftF (LimitedNum n x id)
+
+-- field access
 flags :: Cmd ScriptFlags
 flags = liftF (Flags id)
+
+checker :: Cmd BaseSignatureChecker
+checker = liftF (Checker id)
