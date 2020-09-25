@@ -27,7 +27,6 @@ data InterpreterCommands a
     = Terminate InterpreterError
     | Success
     | NonTopLevelReturn a
-    | CodeSeparator a
     -- stack
     | Push Elem a
     | Pop (Elem -> a)
@@ -59,6 +58,7 @@ data InterpreterError
   | ImpossibleEncoding
   | PushSize
   | Unimplemented ScriptOp
+  | HigherLevelImplementation ScriptOp
   | UnbalancedConditional
   | InvalidAltstackOperation
   | InvalidNumberRange
@@ -89,7 +89,6 @@ data Env = Env
   , script_flags :: ScriptFlags
   , base_signature_checker :: BaseSignatureChecker
   , script_end_to_hash :: [ScriptOp]
-  , ops :: [ScriptOp]
   }
 
 type Signature = Elem
@@ -147,7 +146,6 @@ interpretCmd = go where
     Terminate error     -> (e, Error error)
     Success             -> (e, Return)
     NonTopLevelReturn m -> go m (e { non_top_level_return = True })
-    CodeSeparator     m -> go m (e { script_end_to_hash = ops e })
     -- stack
     Push x m            -> go m (e { stack = stack e Seq.|> x })
     Pop k               -> case Seq.viewr (stack e) of
@@ -267,6 +265,3 @@ checker = liftF (Checker id)
 
 scriptendtohash :: Cmd [ScriptOp]
 scriptendtohash = liftF (ScriptEndToHash id)
-
-codeseparator :: Cmd ()
-codeseparator = liftF (CodeSeparator ())
