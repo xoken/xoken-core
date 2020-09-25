@@ -19,7 +19,7 @@ import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
 type Elem = BS.ByteString
 type Stack a = Seq.Seq a
-type Flags = T Word ScriptFlags
+type ScriptFlags = T Word ScriptFlag
 
 data InterpreterCommands a
     -- signal
@@ -44,7 +44,7 @@ data InterpreterCommands a
     -- num
     | Num2u32 BN (Word32 -> a)
     -- flags
-    | Flags (Flags -> a)
+    | Flags (ScriptFlags -> a)
     deriving (Functor)
 
 type Cmd = Free InterpreterCommands
@@ -77,13 +77,13 @@ data Env = Env
   , branch_stack :: Stack Branch
   , failed_branches :: Word32
   , non_top_level_return :: Bool
-  , script_flags :: Flags
+  , script_flags :: ScriptFlags
   } deriving (Show, Eq)
 
-instance Show Flags where
+instance Show ScriptFlags where
   show = show . toEnums
 
-data ScriptFlags
+data ScriptFlag
   = VERIFY_NONE
   | VERIFY_P2SH
   | VERIFY_STRICTENC
@@ -228,5 +228,5 @@ bn2u32 :: BN -> Cmd Word32
 bn2u32 n = liftF (Num2u32 n id)
 
 -- flags
-flags :: Cmd Flags
+flags :: Cmd ScriptFlags
 flags = liftF (Flags id)

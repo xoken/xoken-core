@@ -13,6 +13,7 @@ import           Data.Bits                      ( complement
 import           Data.Bits.ByteString
 import           Data.EnumBitSet                ( get
                                                 , empty
+                                                , fromEnums
                                                 )
 import           Control.Monad                  ( sequence_
                                                 , when
@@ -31,6 +32,26 @@ import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
 maxScriptElementSizeBeforeGenesis = 520
+
+mandatoryScriptFlags :: ScriptFlags
+mandatoryScriptFlags = fromEnums
+  [ VERIFY_P2SH
+  , VERIFY_STRICTENC
+  , ENABLE_SIGHASH_FORKID
+  , VERIFY_LOW_S
+  , VERIFY_NULLFAIL
+  ]
+
+standardScriptFlags :: ScriptFlags
+standardScriptFlags = fromEnums
+  [ VERIFY_DERSIG
+  , VERIFY_MINIMALDATA
+  , VERIFY_NULLDUMMY
+  , VERIFY_DISCOURAGE_UPGRADABLE_NOPS
+  , VERIFY_CLEANSTACK
+  , VERIFY_CHECKLOCKTIMEVERIFY
+  , VERIFY_CHECKSEQUENCEVERIFY
+  ]
 
 interpretWith :: Env -> Script -> (Env, Maybe InterpreterError)
 interpretWith env script = go (scriptOps script) env where

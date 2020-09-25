@@ -5,7 +5,9 @@ where
 
 import           Data.List                      ( intercalate )
 import           Data.Word                      ( Word8 )
-import           Data.EnumBitSet                ( fromEnums )
+import           Data.EnumBitSet                ( fromEnums
+                                                , (.|.)
+                                                )
 import           Data.ByteString.Builder        ( toLazyByteString
                                                 , byteStringHex
                                                 )
@@ -18,13 +20,9 @@ import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
 env = empty_env
-  { script_flags = fromEnums
-                     [ GENESIS
-                     , UTXO_AFTER_GENESIS
-                     , VERIFY_MINIMALIF
-                     , VERIFY_DISCOURAGE_UPGRADABLE_NOPS
-                     , VERIFY_MINIMALDATA
-                     ]
+  { script_flags = fromEnums [GENESIS, UTXO_AFTER_GENESIS, VERIFY_MINIMALIF]
+                   .|. mandatoryScriptFlags
+                   .|. standardScriptFlags
   }
 interpret = interpretWith env
 
