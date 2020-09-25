@@ -19,12 +19,15 @@ import           Network.Xoken.Script.Interpreter
 import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.OpenSSL_BN
 
-env = empty_env
+env :: Script -> Env
+env script = (empty_env script)
   { script_flags = fromEnums [GENESIS, UTXO_AFTER_GENESIS, VERIFY_MINIMALIF]
                    .|. mandatoryScriptFlags
                    .|. standardScriptFlags
   }
-interpret = interpretWith env
+
+interpret :: Script -> (Env, Maybe InterpreterError)
+interpret = interpretWith . env
 
 spec :: Spec
 spec = do
@@ -179,7 +182,7 @@ testNoFlags
   :: Maybe InterpreterError -> [ScriptOp] -> SpecWith (Arg Expectation)
 testNoFlags r ops =
   it ("returns [] given " ++ show ops ++ " and no flags")
-    $          snd (interpretWith empty_env (Script ops))
+    $          snd (interpretWith $ empty_env (Script ops))
     `shouldBe` r
 
 rawNumToBS = BS.reverse . BS.pack . unroll

@@ -12,6 +12,7 @@ import           Data.Bits                      ( complement
                                                 )
 import           Data.Bits.ByteString
 import           Data.EnumBitSet                ( get
+                                                , set
                                                 , empty
                                                 , fromEnums
                                                 )
@@ -59,8 +60,8 @@ standardScriptFlags = fromEnums
   , VERIFY_CHECKSEQUENCEVERIFY
   ]
 
-interpretWith :: Env -> Script -> (Env, Maybe InterpreterError)
-interpretWith env script = go (scriptOps script) env where
+interpretWith :: Env -> (Env, Maybe InterpreterError)
+interpretWith env = go (script_end_to_hash env) env where
   go (op : rest) e
     | failed_branches e == 0 && not (non_top_level_return e) = next $ opcode op
     | otherwise = case op of
@@ -79,14 +80,16 @@ interpretWith env script = go (scriptOps script) env where
     failed_branch = Branch { satisfied = False, is_else_branch = False }
   go [] e = (e, Nothing)
 
-empty_env = Env { stack                  = Seq.empty
-                , alt_stack              = Seq.empty
-                , branch_stack           = Seq.empty
-                , failed_branches        = 0
-                , non_top_level_return   = False
-                , script_flags           = empty
-                , base_signature_checker = undefined
-                }
+empty_env :: Script -> Env
+empty_env script = Env { stack                  = Seq.empty
+                       , alt_stack              = Seq.empty
+                       , branch_stack           = Seq.empty
+                       , failed_branches        = 0
+                       , non_top_level_return   = False
+                       , script_flags           = empty
+                       , base_signature_checker = undefined
+                       , script_end_to_hash     = scriptOps script
+                       }
 
 opcode :: ScriptOp -> Cmd ()
 -- Pushing Data
@@ -206,13 +209,24 @@ opcode OP_MAX                = binaryarith max
 opcode OP_WITHIN = popn 3 >>= arith >>= push . bin . \[x, min, max] ->
   truth $ min <= x && x < max
 -- Crypto
-opcode OP_RIPEMD160      = unary (BA.convert . hashWith RIPEMD160)
-opcode OP_SHA1           = unary (BA.convert . hashWith SHA1)
-opcode OP_SHA256         = unary (BA.convert . hashWith SHA256)
+opcode OP_RIPEMD160     = unary (BA.convert . hashWith RIPEMD160)
+opcode OP_SHA1          = unary (BA.convert . hashWith SHA1)
+opcode OP_SHA256        = unary (BA.convert . hashWith SHA256)
 opcode OP_HASH160 = unary (BA.convert . hashWith RIPEMD160 . hashWith SHA256)
-opcode OP_HASH256 = unary (BA.convert . hashWith SHA256 . hashWith SHA256)
-opcode OP_CODESEPARATOR  = terminate (Unimplemented OP_CODESEPARATOR)
-opcode OP_CHECKSIG       = terminate (Unimplemented OP_CHECKSIG)
+opcode OP_HASH256       = unary (BA.convert . hashWith SHA256 . hashWith SHA256)
+opcode OP_CODESEPARATOR = terminate (Unimplemented OP_CODESEPARATOR)
+opcode OP_CHECKSIG      = popn 2 >>= \[sig, pubKey] -> do
+  fs     <- flags
+  script <- scriptendtohash
+  c      <- checker
+  checkSignatureEncoding sig fs
+  checkPublicKeyEncoding pubKey fs
+  let clean = cleanupScriptCode script sig fs
+  let success =
+        checkSig c sig pubKey (Script clean) (get ENABLE_SIGHASH_FORKID fs)
+  when (not success && get VERIFY_NULLFAIL fs && BS.length sig > 0)
+       (terminate SigNullfail)
+  push (bin $ truth success)
 opcode OP_CHECKSIGVERIFY = terminate (Unimplemented OP_CHECKSIGVERIFY)
 opcode OP_CHECKMULTISIG  = terminate (Unimplemented OP_CHECKMULTISIG)
 opcode OP_CHECKMULTISIGVERIFY =
@@ -349,3 +363,12 @@ maybenop flag cmd = flags >>= \fs ->
      )
     then (terminate DiscourageUpgradableNOPs)
     else cmd
+
+checkSignatureEncoding :: Elem -> ScriptFlags -> Cmd ()
+checkSignatureEncoding = undefined
+
+checkPublicKeyEncoding :: Elem -> ScriptFlags -> Cmd ()
+checkPublicKeyEncoding = undefined
+
+cleanupScriptCode :: [ScriptOp] -> Signature -> ScriptFlags -> [ScriptOp]
+cleanupScriptCode = undefined

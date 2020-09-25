@@ -48,6 +48,7 @@ data InterpreterCommands a
     -- field access
     | Flags (ScriptFlags -> a)
     | Checker (BaseSignatureChecker -> a)
+    | ScriptEndToHash ([ScriptOp] -> a)
     deriving (Functor)
 
 type Cmd = Free InterpreterCommands
@@ -75,6 +76,7 @@ data InterpreterError
   | NumOverflow
   | NegativeLocktime
   | UnsatisfiedLockTime
+  | SigNullfail
   deriving (Show, Eq)
 
 data Env = Env
@@ -85,6 +87,7 @@ data Env = Env
   , non_top_level_return :: Bool
   , script_flags :: ScriptFlags
   , base_signature_checker :: BaseSignatureChecker
+  , script_end_to_hash :: [ScriptOp]
   }
 
 type Signature = Elem
@@ -192,8 +195,9 @@ interpretCmd = go where
       then go (k $ fromIntegral $ (bin2num x :: BN)) e
       else (e, Error NumOverflow)
     -- field access
-    Flags   k -> go (k $ script_flags e) e
-    Checker k -> go (k $ base_signature_checker e) e
+    Flags           k -> go (k $ script_flags e) e
+    Checker         k -> go (k $ base_signature_checker e) e
+    ScriptEndToHash k -> go (k $ script_end_to_hash e) e
 
 -- signal
 terminate :: InterpreterError -> Cmd ()
@@ -257,3 +261,6 @@ flags = liftF (Flags id)
 
 checker :: Cmd BaseSignatureChecker
 checker = liftF (Checker id)
+
+scriptendtohash :: Cmd [ScriptOp]
+scriptendtohash = liftF (ScriptEndToHash id)
