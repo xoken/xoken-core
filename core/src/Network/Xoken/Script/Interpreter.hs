@@ -61,24 +61,23 @@ standardScriptFlags = fromEnums
   ]
 
 interpretWith :: Env -> (Env, Maybe InterpreterError)
-interpretWith env = go (script_end_to_hash env) env where
-  go (op : rest) e
-    | failed_branches e == 0 && not (non_top_level_return e) = next $ opcode op
-    | otherwise = case op of
-      OP_IF       -> next $ pushbranch failed_branch
-      OP_NOTIF    -> next $ pushbranch failed_branch
-      OP_VERIF    -> next $ opcode op
-      OP_VERNOTIF -> next $ opcode op
-      OP_ELSE     -> next $ opcode op
-      OP_ENDIF    -> next $ opcode op
-      _           -> go rest e
-   where
-    next cmd = case interpretCmd cmd e of
-      (e', OK         ) -> go rest e'
-      (e', Error error) -> (e', Just error)
-      (e', Return     ) -> (e', Nothing)
-    failed_branch = Branch { satisfied = False, is_else_branch = False }
-  go [] e = (e, Nothing)
+interpretWith e@(Env { ops = op : rest })
+  | failed_branches e == 0 && not (non_top_level_return e) = next $ opcode op
+  | otherwise = case op of
+    OP_IF       -> next $ pushbranch failed_branch
+    OP_NOTIF    -> next $ pushbranch failed_branch
+    OP_VERIF    -> next $ opcode op
+    OP_VERNOTIF -> next $ opcode op
+    OP_ELSE     -> next $ opcode op
+    OP_ENDIF    -> next $ opcode op
+    _           -> interpretWith (e { ops = rest })
+ where
+  next cmd = case interpretCmd cmd e of
+    (e', OK         ) -> interpretWith (e' { ops = rest })
+    (e', Error error) -> (e', Just error)
+    (e', Return     ) -> (e', Nothing)
+  failed_branch = Branch { satisfied = False, is_else_branch = False }
+interpretWith e = (e, Nothing)
 
 empty_env :: Script -> Env
 empty_env script = Env { stack                  = Seq.empty
@@ -88,6 +87,7 @@ empty_env script = Env { stack                  = Seq.empty
                        , non_top_level_return   = False
                        , script_flags           = empty
                        , base_signature_checker = undefined
+                       , ops                    = scriptOps script
                        , script_end_to_hash     = scriptOps script
                        }
 
@@ -214,7 +214,7 @@ opcode OP_SHA1          = unary (BA.convert . hashWith SHA1)
 opcode OP_SHA256        = unary (BA.convert . hashWith SHA256)
 opcode OP_HASH160 = unary (BA.convert . hashWith RIPEMD160 . hashWith SHA256)
 opcode OP_HASH256       = unary (BA.convert . hashWith SHA256 . hashWith SHA256)
-opcode OP_CODESEPARATOR = terminate (Unimplemented OP_CODESEPARATOR)
+opcode OP_CODESEPARATOR = codeseparator
 opcode OP_CHECKSIG      = popn 2 >>= \[sig, pubKey] -> do
   fs     <- flags
   script <- scriptendtohash
