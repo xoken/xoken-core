@@ -24,13 +24,15 @@ import           Crypto.Hash                    ( hashWith
                                                 , SHA1(..)
                                                 , SHA256(..)
                                                 )
+import           Crypto.Secp256k1               ( importSig
+                                                , importPubKey
+                                                )
 import qualified Data.ByteString               as BS
 import qualified Data.ByteArray                as BA
-import qualified Data.Serialize                as S
 import qualified Data.Sequence                 as Seq
 import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.Interpreter.Commands
-import           Network.Xoken.Script.Interpreter.OpenSSL_BN
+import           Network.Xoken.Script.Interpreter.Util
 
 maxScriptElementSizeBeforeGenesis = 520
 sequenceLocktimeDisableFlag = 2 ^ 31
@@ -83,15 +85,16 @@ interpretWith env = go (script_end_to_hash env) env where
   go [] e = (e, Nothing)
 
 empty_env :: Script -> Env
-empty_env script = Env { stack                  = Seq.empty
-                       , alt_stack              = Seq.empty
-                       , branch_stack           = Seq.empty
-                       , failed_branches        = 0
-                       , non_top_level_return   = False
-                       , script_flags           = empty
-                       , base_signature_checker = undefined
-                       , script_end_to_hash     = scriptOps script
-                       }
+empty_env script = Env
+  { stack                  = Seq.empty
+  , alt_stack              = Seq.empty
+  , branch_stack           = Seq.empty
+  , failed_branches        = 0
+  , non_top_level_return   = False
+  , script_flags           = empty
+  , base_signature_checker = txSigChecker undefined undefined
+  , script_end_to_hash     = scriptOps script
+  }
 
 opcode :: ScriptOp -> Cmd ()
 -- Pushing Data
@@ -211,24 +214,28 @@ opcode OP_MAX                = binaryarith max
 opcode OP_WITHIN = popn 3 >>= arith >>= push . bin . \[x, min, max] ->
   truth $ min <= x && x < max
 -- Crypto
-opcode OP_RIPEMD160     = unary (BA.convert . hashWith RIPEMD160)
-opcode OP_SHA1          = unary (BA.convert . hashWith SHA1)
-opcode OP_SHA256        = unary (BA.convert . hashWith SHA256)
-opcode OP_HASH160 = unary (BA.convert . hashWith RIPEMD160 . hashWith SHA256)
-opcode OP_HASH256       = unary (BA.convert . hashWith SHA256 . hashWith SHA256)
-opcode OP_CODESEPARATOR = terminate (HigherLevelImplementation OP_CODESEPARATOR)
-opcode OP_CHECKSIG      = popn 2 >>= \[sig, pubKey] -> do
+opcode OP_RIPEMD160 = unary (BA.convert . hashWith RIPEMD160)
+opcode OP_SHA1      = unary (BA.convert . hashWith SHA1)
+opcode OP_SHA256    = unary (BA.convert . hashWith SHA256)
+opcode OP_HASH160   = unary (BA.convert . hashWith RIPEMD160 . hashWith SHA256)
+opcode OP_HASH256   = unary (BA.convert . hashWith SHA256 . hashWith SHA256)
+opcode OP_CODESEPARATOR =
+  terminate (HigherLevelImplementation OP_CODESEPARATOR)
+opcode OP_CHECKSIG = popn 2 >>= \[sigBS, pubKeyBS] -> do
   fs     <- flags
   script <- scriptendtohash
   c      <- checker
-  checkSignatureEncoding sig fs
-  checkPublicKeyEncoding pubKey fs
-  let clean = cleanupScriptCode script sig fs
-  let success =
-        checkSig c sig pubKey (Script clean) (get ENABLE_SIGHASH_FORKID fs)
-  when (not success && get VERIFY_NULLFAIL fs && BS.length sig > 0)
-       (terminate SigNullfail)
-  push (bin $ truth success)
+  let maybeSig    = importSig sigBS
+  let maybePubKey = importPubKey pubKeyBS
+  case (maybeSig, maybePubKey) of
+    (Just sig, Just pubKey) -> do
+      let clean = cleanupScriptCode script sig fs
+      let success =
+            checkSig c sig pubKey (Script clean) (get ENABLE_SIGHASH_FORKID fs)
+      when (not success && get VERIFY_NULLFAIL fs && BS.length sigBS > 0)
+           (terminate SigNullfail)
+      push (bin $ truth success)
+    _ -> terminate InvalidSigOrPubKey
 opcode OP_CHECKSIGVERIFY = terminate (Unimplemented OP_CHECKSIGVERIFY)
 opcode OP_CHECKMULTISIG  = terminate (Unimplemented OP_CHECKMULTISIG)
 opcode OP_CHECKMULTISIGVERIFY =
@@ -302,9 +309,6 @@ arrangepeek n f = peekn n >>= pushn . f
 unary :: (Elem -> Elem) -> Cmd ()
 unary f = pop >>= push . f
 
-binary :: (Elem -> Elem -> Elem) -> Cmd ()
-binary f = popn 2 >>= \[x1, x2] -> push $ f x1 x2
-
 arith :: [Elem] -> Cmd [BN]
 arith = pure . map num
 
@@ -365,12 +369,3 @@ maybenop flag cmd = flags >>= \fs ->
      )
     then (terminate DiscourageUpgradableNOPs)
     else cmd
-
-checkSignatureEncoding :: Elem -> ScriptFlags -> Cmd ()
-checkSignatureEncoding = undefined
-
-checkPublicKeyEncoding :: Elem -> ScriptFlags -> Cmd ()
-checkPublicKeyEncoding = undefined
-
-cleanupScriptCode :: [ScriptOp] -> Signature -> ScriptFlags -> [ScriptOp]
-cleanupScriptCode = undefined

@@ -1,5 +1,4 @@
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE FlexibleInstances #-}
 module Network.Xoken.Script.Interpreter.Commands where
 
 import           Data.Word                      ( Word8
@@ -16,13 +15,12 @@ import           Control.Monad.Free             ( Free(Pure, Free)
 import qualified Data.ByteString               as BS
 import qualified Data.Sequence                 as Seq
 import           Network.Xoken.Script.Common
-import           Network.Xoken.Script.Interpreter.OpenSSL_BN
+import           Network.Xoken.Script.Interpreter.Util
 
 type Elem = BS.ByteString
 type Stack a = Seq.Seq a
-type ScriptFlags = T Word ScriptFlag
 
-data InterpreterCommands a
+data InterpreterCommand a
     -- signal
     = Terminate InterpreterError
     | Success
@@ -51,7 +49,7 @@ data InterpreterCommands a
     | ScriptEndToHash ([ScriptOp] -> a)
     deriving (Functor)
 
-type Cmd = Free InterpreterCommands
+type Cmd = Free InterpreterCommand
 
 data InterpreterError
   = StackUnderflow
@@ -78,6 +76,7 @@ data InterpreterError
   | NegativeLocktime
   | UnsatisfiedLockTime
   | SigNullfail
+  | InvalidSigOrPubKey
   deriving (Show, Eq)
 
 data Env = Env
@@ -90,40 +89,6 @@ data Env = Env
   , base_signature_checker :: BaseSignatureChecker
   , script_end_to_hash :: [ScriptOp]
   }
-
-type Signature = Elem
-type PublicKey = Elem
-type EnabledSighashForkid = Bool
-
-data BaseSignatureChecker = BaseSignatureChecker
-  { checkSig :: Signature -> PublicKey -> Script -> EnabledSighashForkid -> Bool
-  , checkLockTime :: Int64 -> Bool
-  , checkSequence :: Int64 -> Bool
-  }
-
-instance Show ScriptFlags where
-  show = show . toEnums
-
-data ScriptFlag
-  = VERIFY_NONE
-  | VERIFY_P2SH
-  | VERIFY_STRICTENC
-  | VERIFY_DERSIG
-  | VERIFY_LOW_S
-  | VERIFY_NULLDUMMY
-  | VERIFY_SIGPUSHONLY
-  | VERIFY_MINIMALDATA
-  | VERIFY_DISCOURAGE_UPGRADABLE_NOPS
-  | VERIFY_CLEANSTACK
-  | VERIFY_CHECKLOCKTIMEVERIFY
-  | VERIFY_CHECKSEQUENCEVERIFY
-  | VERIFY_MINIMALIF
-  | VERIFY_NULLFAIL
-  | VERIFY_COMPRESSED_PUBKEYTYPE
-  | ENABLE_SIGHASH_FORKID
-  | GENESIS
-  | UTXO_AFTER_GENESIS
-  deriving (Show, Enum)
 
 data Branch = Branch
   { satisfied :: Bool

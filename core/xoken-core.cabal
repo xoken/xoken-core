@@ -65,7 +65,7 @@ library
       Network.Xoken.Transaction.Builder
       Network.Xoken.Script.Interpreter
       Network.Xoken.Script.Interpreter.Commands
-      Network.Xoken.Script.Interpreter.OpenSSL_BN
+      Network.Xoken.Script.Interpreter.Util
       Paths_xoken_core
   hs-source-dirs:
       src
@@ -157,7 +157,7 @@ test-suite spec
       Network.Xoken.Util
       Network.Xoken.Script.Interpreter
       Network.Xoken.Script.Interpreter.Commands
-      Network.Xoken.Script.Interpreter.OpenSSL_BN
+      Network.Xoken.Script.Interpreter.Util
       Paths_xoken_core
   hs-source-dirs:
       test, src

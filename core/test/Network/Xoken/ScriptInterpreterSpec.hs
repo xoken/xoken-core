@@ -17,7 +17,7 @@ import           Test.Hspec
 import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.Interpreter
 import           Network.Xoken.Script.Interpreter.Commands
-import           Network.Xoken.Script.Interpreter.OpenSSL_BN
+import           Network.Xoken.Script.Interpreter.Util
 
 env :: Script -> Env
 env script = (empty_env script)
