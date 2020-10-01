@@ -92,7 +92,7 @@ empty_env script = Env
   , failed_branches        = 0
   , non_top_level_return   = False
   , script_flags           = empty
-  , base_signature_checker = txSigChecker undefined undefined
+  , base_signature_checker = txSigChecker undefined undefined undefined
   , script_end_to_hash     = scriptOps script
   }
 

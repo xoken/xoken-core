@@ -4,7 +4,6 @@ module Network.Xoken.Script.Interpreter.Commands where
 import           Data.Word                      ( Word8
                                                 , Word32
                                                 )
-import           Data.Int                       ( Int64 )
 import           Data.EnumBitSet                ( T
                                                 , toEnums
                                                 )
@@ -42,7 +41,7 @@ data InterpreterCommand a
     | PopBranch (Branch -> a)
     -- num
     | Num2u32 BN (Word32 -> a)
-    | LimitedNum Int Elem (Int64 -> a)
+    | LimitedNum Int Elem (BN -> a)
     -- field access
     | Flags (ScriptFlags -> a)
     | Checker (BaseSignatureChecker -> a)
@@ -158,7 +157,7 @@ interpretCmd = go where
       Just u -> go (k u) e
       _      -> (e, Error InvalidNumberRange)
     LimitedNum n x k -> if BS.length x <= n
-      then go (k $ fromIntegral $ (bin2num x :: BN)) e
+      then go (k $ (bin2num x :: BN)) e
       else (e, Error NumOverflow)
     -- field access
     Flags           k -> go (k $ script_flags e) e
@@ -218,7 +217,7 @@ popbranch = liftF (PopBranch id)
 bn2u32 :: BN -> Cmd Word32
 bn2u32 n = liftF (Num2u32 n id)
 
-limitednum :: Int -> Elem -> Cmd Int64
+limitednum :: Int -> Elem -> Cmd BN
 limitednum n x = liftF (LimitedNum n x id)
 
 -- field access

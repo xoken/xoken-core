@@ -107,14 +107,15 @@ type EnabledSighashForkid = Bool
 
 data BaseSignatureChecker = BaseSignatureChecker
   { checkSig :: Sig -> PubKey -> Script -> EnabledSighashForkid -> Bool
-  , checkLockTime :: Int64 -> Bool
-  , checkSequence :: Int64 -> Bool
+  , checkLockTime :: BN -> Bool
+  , checkSequence :: BN -> Bool
   }
 
-txSigChecker net tx = BaseSignatureChecker { checkSig      = checkSigFull net tx
-                                           , checkLockTime = undefined
-                                           , checkSequence = undefined
-                                           }
+txSigChecker net tx nIn = BaseSignatureChecker
+  { checkSig      = checkSigFull net tx
+  , checkLockTime = checkLockTimeFull tx nIn
+  , checkSequence = undefined
+  }
 
 checkSigFull
   :: Network -> Tx -> Sig -> PubKey -> Script -> EnabledSighashForkid -> Bool
@@ -123,6 +124,16 @@ checkSigFull net tx sig pubkey script forkid =
     Just m -> verifySig pubkey sig m
     _      -> False
   where hash = txSigHash net tx script undefined undefined (sigHash sig)
+
+checkLockTimeFull :: Tx -> Int -> BN -> Bool
+checkLockTimeFull tx nIn n =
+  ((tx_n < threshold && n < threshold) || (tx_n >= threshold && n >= threshold))
+    && (n <= tx_n)
+    && (sequenceFinal /= txInSequence (txIn tx !! nIn))
+ where
+  tx_n          = fromIntegral $ txLockTime tx
+  threshold     = 500000000
+  sequenceFinal = 0xffffffff
 
 cleanupScriptCode :: [ScriptOp] -> Sig -> ScriptFlags -> [ScriptOp]
 cleanupScriptCode = undefined
