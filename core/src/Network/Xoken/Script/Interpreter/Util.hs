@@ -163,8 +163,11 @@ checkSequenceFull tx nIn n =
   sequenceLockTimeTypeFlag = 2 ^ 22
   sequenceLockTimeMask = 0x0000ffff
 
-cleanupScriptCode :: [ScriptOp] -> Sig -> ScriptFlags -> [ScriptOp]
-cleanupScriptCode = undefined
+cleanupScriptCode :: [ScriptOp] -> Sig -> Bool -> [ScriptOp]
+cleanupScriptCode script sig forkidEnabled
+  | not forkidEnabled || not (hasForkIdFlag $ sigHash sig) = delete sig script
+  | otherwise = script
+  where delete = undefined
 
 sigHash :: Sig -> SigHash
 sigHash sig = undefined

@@ -85,16 +85,15 @@ interpretWith env = go (script_end_to_hash env) env where
   go [] e = (e, Nothing)
 
 empty_env :: Script -> BaseSignatureChecker -> Env
-empty_env script checker = Env
-  { stack                  = Seq.empty
-  , alt_stack              = Seq.empty
-  , branch_stack           = Seq.empty
-  , failed_branches        = 0
-  , non_top_level_return   = False
-  , script_flags           = empty
-  , base_signature_checker = checker
-  , script_end_to_hash     = scriptOps script
-  }
+empty_env script checker = Env { stack                  = Seq.empty
+                               , alt_stack              = Seq.empty
+                               , branch_stack           = Seq.empty
+                               , failed_branches        = 0
+                               , non_top_level_return   = False
+                               , script_flags           = empty
+                               , base_signature_checker = checker
+                               , script_end_to_hash     = scriptOps script
+                               }
 
 opcode :: ScriptOp -> Cmd ()
 -- Pushing Data
@@ -229,7 +228,7 @@ opcode OP_CHECKSIG = popn 2 >>= \[sigBS, pubKeyBS] -> do
   let maybePubKey = importPubKey pubKeyBS
   case (maybeSig, maybePubKey) of
     (Just sig, Just pubKey) -> do
-      let clean = cleanupScriptCode script sig fs
+      let clean = cleanupScriptCode script sig (get ENABLE_SIGHASH_FORKID fs)
       let success =
             checkSig c sig pubKey (Script clean) (get ENABLE_SIGHASH_FORKID fs)
       when (not success && get VERIFY_NULLFAIL fs && BS.length sigBS > 0)
