@@ -19,8 +19,16 @@ import           Network.Xoken.Script.Interpreter
 import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.Util
 
+sigChecker :: BaseSignatureChecker
+sigChecker = txSigChecker net txTo nIn amount inputIndex where
+  net        = undefined
+  txTo       = undefined
+  nIn        = undefined
+  amount     = undefined
+  inputIndex = undefined
+
 env :: Script -> Env
-env script = (empty_env script)
+env script = (empty_env script sigChecker)
   { script_flags = fromEnums [GENESIS, UTXO_AFTER_GENESIS, VERIFY_MINIMALIF]
                    .|. mandatoryScriptFlags
                    .|. standardScriptFlags
@@ -182,7 +190,7 @@ testNoFlags
   :: Maybe InterpreterError -> [ScriptOp] -> SpecWith (Arg Expectation)
 testNoFlags r ops =
   it ("returns [] given " ++ show ops ++ " and no flags")
-    $          snd (interpretWith $ empty_env (Script ops))
+    $          snd (interpretWith $ empty_env (Script ops) sigChecker)
     `shouldBe` r
 
 rawNumToBS = BS.reverse . BS.pack . unroll

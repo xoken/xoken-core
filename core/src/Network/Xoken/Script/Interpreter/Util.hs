@@ -9,6 +9,7 @@ import           Data.EnumBitSet                ( T
 import           Data.List                      ( unfoldr )
 import           Data.Word                      ( Word8
                                                 , Word32
+                                                , Word64
                                                 )
 import           Data.Bits                      ( Bits
                                                 , (.&.)
@@ -111,19 +112,27 @@ data BaseSignatureChecker = BaseSignatureChecker
   , checkSequence :: BN -> Bool
   }
 
-txSigChecker net tx nIn = BaseSignatureChecker
-  { checkSig      = checkSigFull net tx
+txSigChecker net tx nIn amount inputIndex = BaseSignatureChecker
+  { checkSig      = checkSigFull net tx amount inputIndex
   , checkLockTime = checkLockTimeFull tx nIn
   , checkSequence = checkSequenceFull tx nIn
   }
 
 checkSigFull
-  :: Network -> Tx -> Sig -> PubKey -> Script -> EnabledSighashForkid -> Bool
-checkSigFull net tx sig pubkey script forkid =
+  :: Network
+  -> Tx
+  -> Word64
+  -> Int
+  -> Sig
+  -> PubKey
+  -> Script
+  -> EnabledSighashForkid
+  -> Bool
+checkSigFull net tx amount inputIndex sig pubkey script forkid =
   case msg $ fromShort $ getHash256 hash of
     Just m -> verifySig pubkey sig m
     _      -> False
-  where hash = txSigHash net tx script undefined undefined (sigHash sig)
+  where hash = txSigHash net tx script amount inputIndex (sigHash sig)
 
 checkLockTimeFull :: Tx -> Int -> BN -> Bool
 checkLockTimeFull tx nIn n =

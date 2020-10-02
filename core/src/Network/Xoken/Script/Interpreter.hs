@@ -84,15 +84,15 @@ interpretWith env = go (script_end_to_hash env) env where
     failed_branch = Branch { satisfied = False, is_else_branch = False }
   go [] e = (e, Nothing)
 
-empty_env :: Script -> Env
-empty_env script = Env
+empty_env :: Script -> BaseSignatureChecker -> Env
+empty_env script checker = Env
   { stack                  = Seq.empty
   , alt_stack              = Seq.empty
   , branch_stack           = Seq.empty
   , failed_branches        = 0
   , non_top_level_return   = False
   , script_flags           = empty
-  , base_signature_checker = txSigChecker undefined undefined undefined
+  , base_signature_checker = checker
   , script_end_to_hash     = scriptOps script
   }
 
