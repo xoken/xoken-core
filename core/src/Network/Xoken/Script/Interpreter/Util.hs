@@ -114,7 +114,7 @@ data BaseSignatureChecker = BaseSignatureChecker
 txSigChecker net tx nIn = BaseSignatureChecker
   { checkSig      = checkSigFull net tx
   , checkLockTime = checkLockTimeFull tx nIn
-  , checkSequence = undefined
+  , checkSequence = checkSequenceFull tx nIn
   }
 
 checkSigFull
@@ -134,6 +134,25 @@ checkLockTimeFull tx nIn n =
   tx_n          = fromIntegral $ txLockTime tx
   threshold     = 500000000
   sequenceFinal = 0xffffffff
+
+checkSequenceFull :: Tx -> Int -> BN -> Bool
+checkSequenceFull tx nIn n =
+  (txVersion tx >= 2)
+    && (txToSequence .&. sequenceLockTimeDisableFlag == 0)
+    && (  (txToSequenceMasked < flag && nSequenceMasked < bnflag)
+       || (txToSequenceMasked >= flag && nSequenceMasked >= bnflag)
+       )
+    && (nSequenceMasked <= fromIntegral txToSequenceMasked)
+ where
+  txToSequence = fromIntegral $ txInSequence (txIn tx !! nIn) :: Int
+  nLockTimeMask = fromIntegral flag .|. sequenceLockTimeMask :: Word32
+  txToSequenceMasked = txToSequence .&. fromIntegral nLockTimeMask :: Int
+  nSequenceMasked = n .&. fromIntegral nLockTimeMask :: BN
+  flag = sequenceLockTimeTypeFlag
+  bnflag = fromIntegral flag
+  sequenceLockTimeDisableFlag = 2 ^ 31
+  sequenceLockTimeTypeFlag = 2 ^ 22
+  sequenceLockTimeMask = 0x0000ffff
 
 cleanupScriptCode :: [ScriptOp] -> Sig -> ScriptFlags -> [ScriptOp]
 cleanupScriptCode = undefined
