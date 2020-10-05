@@ -29,6 +29,7 @@ import           Network.Xoken.Script.SigHash
 import           Network.Xoken.Constants
 import           Network.Xoken.Transaction.Common
 import           Network.Xoken.Crypto.Hash
+import           Network.Xoken.Crypto.Signature
 
 class BigNum a where
    bin2num :: BS.ByteString -> a
@@ -128,10 +129,10 @@ checkSigFull
   -> Script
   -> EnabledSighashForkid
   -> Bool
-checkSigFull net tx amount inputIndex sig pubkey script forkid =
-  case msg $ fromShort $ getHash256 hash of
-    Just m -> verifySig pubkey sig m
-    _      -> False
+checkSigFull net tx amount inputIndex sig pubkey script forkid = verifyHashSig
+  hash
+  sig
+  pubkey
   where hash = txSigHash net tx script amount inputIndex (sigHash sig)
 
 checkLockTimeFull :: Tx -> Int -> BN -> Bool

@@ -64,6 +64,8 @@ data InterpreterError
   | Verify
   | EqualVerify
   | NumEqualVerify
+  | CheckSigVerify
+  | CheckMultiSigVerify
   | MinimalIf
   | MinimalData
   | DiscourageUpgradableNOPs

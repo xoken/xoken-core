@@ -220,35 +220,20 @@ opcode OP_HASH160   = unary (BA.convert . hashWith RIPEMD160 . hashWith SHA256)
 opcode OP_HASH256   = unary (BA.convert . hashWith SHA256 . hashWith SHA256)
 opcode OP_CODESEPARATOR =
   terminate (HigherLevelImplementation OP_CODESEPARATOR)
-opcode OP_CHECKSIG = popn 2 >>= \[sigBS, pubKeyBS] -> do
-  fs     <- flags
-  script <- scriptendtohash
-  c      <- checker
-  let maybeSig    = importSig sigBS
-  let maybePubKey = importPubKey pubKeyBS
-  case (maybeSig, maybePubKey) of
-    (Just sig, Just pubKey) -> do
-      let clean = cleanupScriptCode script sig (get ENABLE_SIGHASH_FORKID fs)
-      let success =
-            checkSig c sig pubKey (Script clean) (get ENABLE_SIGHASH_FORKID fs)
-      when (not success && get VERIFY_NULLFAIL fs && BS.length sigBS > 0)
-           (terminate SigNullfail)
-      push (bin $ truth success)
-    _ -> terminate InvalidSigOrPubKey
-opcode OP_CHECKSIGVERIFY = terminate (Unimplemented OP_CHECKSIGVERIFY)
-opcode OP_CHECKMULTISIG  = terminate (Unimplemented OP_CHECKMULTISIG)
-opcode OP_CHECKMULTISIGVERIFY =
-  terminate (Unimplemented OP_CHECKMULTISIGVERIFY)
+opcode OP_CHECKSIG            = checksig pushbool
+opcode OP_CHECKSIGVERIFY      = checksig (verify CheckSigVerify)
+opcode OP_CHECKMULTISIG       = checkmultisig pushbool
+opcode OP_CHECKMULTISIGVERIFY = checkmultisig (verify CheckMultiSigVerify)
 -- Pseudo-words
-opcode OP_PUBKEYHASH        = terminate (Unimplemented OP_PUBKEYHASH)
-opcode OP_PUBKEY            = terminate (Unimplemented OP_PUBKEY)
-opcode (OP_INVALIDOPCODE n) = terminate (BadOpcode (OP_INVALIDOPCODE n))
+opcode OP_PUBKEYHASH          = terminate (Unimplemented OP_PUBKEYHASH)
+opcode OP_PUBKEY              = terminate (Unimplemented OP_PUBKEY)
+opcode (OP_INVALIDOPCODE n)   = terminate (BadOpcode (OP_INVALIDOPCODE n))
 -- Reserved words
-opcode OP_RESERVED          = terminate (BadOpcode OP_RESERVED)
-opcode OP_RESERVED1         = terminate (BadOpcode OP_RESERVED1)
-opcode OP_RESERVED2         = terminate (BadOpcode OP_RESERVED2)
-opcode OP_NOP1              = nop
-opcode OP_NOP2              = maybenop
+opcode OP_RESERVED            = terminate (BadOpcode OP_RESERVED)
+opcode OP_RESERVED1           = terminate (BadOpcode OP_RESERVED1)
+opcode OP_RESERVED2           = terminate (BadOpcode OP_RESERVED2)
+opcode OP_NOP1                = nop
+opcode OP_NOP2                = maybenop
   VERIFY_CHECKLOCKTIMEVERIFY
   (pop >>= limitednum 5 >>= \n -> if n < 0
     then terminate NegativeLocktime
@@ -368,3 +353,29 @@ maybenop flag cmd = flags >>= \fs ->
      )
     then (terminate DiscourageUpgradableNOPs)
     else cmd
+
+checksig :: (Bool -> Cmd ()) -> Cmd ()
+checksig finalize = popn 2 >>= \[sigBS, pubKeyBS] -> do
+  fs     <- flags
+  script <- scriptendtohash
+  c      <- checker
+  let maybeSig    = importSig sigBS
+  let maybePubKey = importPubKey pubKeyBS
+  case (maybeSig, maybePubKey) of
+    (Just sig, Just pubKey) -> do
+      let clean = cleanupScriptCode script sig (get ENABLE_SIGHASH_FORKID fs)
+      let success =
+            checkSig c sig pubKey (Script clean) (get ENABLE_SIGHASH_FORKID fs)
+      when (not success && get VERIFY_NULLFAIL fs && BS.length sigBS > 0)
+           (terminate SigNullfail)
+      finalize success
+    _ -> terminate InvalidSigOrPubKey
+
+checkmultisig :: (Bool -> Cmd ()) -> Cmd ()
+checkmultisig finalize = terminate (Unimplemented OP_CHECKMULTISIG)
+
+verify :: InterpreterError -> Bool -> Cmd ()
+verify error x = when (not x) (terminate error)
+
+pushbool :: Bool -> Cmd ()
+pushbool = push . bin . truth
