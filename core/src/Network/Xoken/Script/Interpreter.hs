@@ -129,9 +129,9 @@ opcode OP_ELSE               = popbranch >>= \b -> if is_else_branch b
     (Branch { satisfied = not $ satisfied b, is_else_branch = True })
 opcode OP_ENDIF  = popbranch >> pure ()
 opcode OP_VERIFY = pop >>= \x -> when (num x == 0) (terminate Verify)
-opcode OP_RETURN = flags >>= \fs -> if get UTXO_AFTER_GENESIS fs
-  then stacksize >>= \s -> when (s == 0) success >> nontoplevelreturn
-  else terminate OpReturn
+opcode OP_RETURN = flag UTXO_AFTER_GENESIS >>= \case
+  True -> stacksize >>= \s -> when (s == 0) success >> nontoplevelreturn
+  _    -> terminate OpReturn
 -- Stack operations
 opcode OP_TOALTSTACK   = pop >>= pushalt
 opcode OP_FROMALTSTACK = popalt >>= push
@@ -263,7 +263,7 @@ pushn :: [Elem] -> Cmd ()
 pushn = sequence_ . map push
 
 pushdata :: BS.ByteString -> PushDataType -> Cmd ()
-pushdata bs size = verifyminimaldata >>= \case
+pushdata bs size = flag VERIFY_MINIMALDATA >>= \case
   True -> maybe
     (terminate MinimalData)
     (\optimal -> if size == optimal then go else terminate MinimalData)
@@ -274,14 +274,8 @@ pushdata bs size = verifyminimaldata >>= \case
     True -> terminate PushSize
     _    -> push bs
 
-verifyminimaldata :: Cmd Bool
-verifyminimaldata = flags >>= pure . get VERIFY_MINIMALDATA
-
-aftergenesis :: Cmd Bool
-aftergenesis = flags >>= pure . get UTXO_AFTER_GENESIS
-
 isOverMaxElemSize :: Integral a => a -> Cmd Bool
-isOverMaxElemSize n = aftergenesis >>= pure . isOver
+isOverMaxElemSize n = flag UTXO_AFTER_GENESIS >>= pure . isOver
   where isOver = (&& n > fromIntegral maxScriptElementSizeBeforeGenesis)
 
 arrange :: Int -> ([Elem] -> [Elem]) -> Cmd ()

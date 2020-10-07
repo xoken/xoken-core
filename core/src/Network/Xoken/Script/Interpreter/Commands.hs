@@ -6,6 +6,7 @@ import           Data.Word                      ( Word8
                                                 )
 import           Data.EnumBitSet                ( T
                                                 , toEnums
+                                                , get
                                                 )
 import           Data.Foldable                  ( toList )
 import           Control.Monad.Free             ( Free(Pure, Free)
@@ -43,6 +44,7 @@ data InterpreterCommand a
     | Num2u32 BN (Word32 -> a)
     | LimitedNum Int Elem (BN -> a)
     -- field access
+    | Flag ScriptFlag (Bool -> a)
     | Flags (ScriptFlags -> a)
     | Checker (BaseSignatureChecker -> a)
     | ScriptEndToHash ([ScriptOp] -> a)
@@ -162,6 +164,7 @@ interpretCmd = go where
       then go (k $ (bin2num x :: BN)) e
       else (e, Error NumOverflow)
     -- field access
+    Flag f k          -> go (k $ get f $ script_flags e) e
     Flags           k -> go (k $ script_flags e) e
     Checker         k -> go (k $ base_signature_checker e) e
     ScriptEndToHash k -> go (k $ script_end_to_hash e) e
@@ -223,6 +226,9 @@ limitednum :: Int -> Elem -> Cmd BN
 limitednum n x = liftF (LimitedNum n x id)
 
 -- field access
+flag :: ScriptFlag -> Cmd Bool
+flag f = liftF (Flag f id)
+
 flags :: Cmd ScriptFlags
 flags = liftF (Flags id)
 
