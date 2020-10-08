@@ -105,10 +105,10 @@ data ScriptFlag
   | UTXO_AFTER_GENESIS
   deriving (Show, Enum)
 
-type EnabledSighashForkid = Bool
+type SighashForkid = Bool
 
 data BaseSignatureChecker = BaseSignatureChecker
-  { checkSig :: Sig -> PubKey -> Script -> EnabledSighashForkid -> Bool
+  { checkSig :: Sig -> SigHash -> PubKey -> Script -> SighashForkid -> Bool
   , checkLockTime :: BN -> Bool
   , checkSequence :: BN -> Bool
   }
@@ -125,15 +125,14 @@ checkSigFull
   -> Word64
   -> Int
   -> Sig
+  -> SigHash
   -> PubKey
   -> Script
-  -> EnabledSighashForkid
+  -> SighashForkid
   -> Bool
-checkSigFull net tx amount inputIndex sig pubkey script forkid = verifyHashSig
-  hash
-  sig
-  pubkey
-  where hash = txSigHash net tx script amount inputIndex (sigHash sig)
+checkSigFull net tx amount inputIndex sig sighash pubkey script forkid =
+  verifyHashSig hash sig pubkey
+  where hash = txSigHash net tx script amount inputIndex sighash
 
 checkLockTimeFull :: Tx -> Int -> BN -> Bool
 checkLockTimeFull tx nIn n =
@@ -164,11 +163,11 @@ checkSequenceFull tx nIn n =
   sequenceLockTimeTypeFlag = 2 ^ 22
   sequenceLockTimeMask = 0x0000ffff
 
-cleanupScriptCode :: [ScriptOp] -> Sig -> Bool -> [ScriptOp]
-cleanupScriptCode script sig forkidEnabled
-  | not forkidEnabled || not (hasForkIdFlag $ sigHash sig) = delete sig script
+cleanupScriptCode :: [ScriptOp] -> Sig -> SigHash -> Bool -> [ScriptOp]
+cleanupScriptCode script sig sighash forkidEnabled
+  | not forkidEnabled || not (hasForkIdFlag sighash) = delete sig script
   | otherwise = script
   where delete = undefined
 
-sigHash :: Sig -> SigHash
-sigHash sig = undefined
+sigHash :: BS.ByteString -> SigHash
+sigHash = toEnum . fromIntegral . BS.last

@@ -345,7 +345,7 @@ maybenop flag cmd = flags >>= \fs ->
   if (  (not (get flag fs) || get UTXO_AFTER_GENESIS fs)
      && get VERIFY_DISCOURAGE_UPGRADABLE_NOPS fs
      )
-    then (terminate DiscourageUpgradableNOPs)
+    then terminate DiscourageUpgradableNOPs
     else cmd
 
 checksig :: (Bool -> Cmd ()) -> Cmd ()
@@ -353,13 +353,14 @@ checksig finalize = popn 2 >>= \[sigBS, pubKeyBS] -> do
   fs     <- flags
   script <- scriptendtohash
   c      <- checker
-  let maybeSig    = importSig sigBS
-  let maybePubKey = importPubKey pubKeyBS
+  let forkid      = get ENABLE_SIGHASH_FORKID fs
+      sighash     = sigHash sigBS
+      maybeSig    = importSig (BS.init sigBS)
+      maybePubKey = importPubKey pubKeyBS
   case (maybeSig, maybePubKey) of
     (Just sig, Just pubKey) -> do
-      let clean = cleanupScriptCode script sig (get ENABLE_SIGHASH_FORKID fs)
-      let success =
-            checkSig c sig pubKey (Script clean) (get ENABLE_SIGHASH_FORKID fs)
+      let clean   = cleanupScriptCode script sig sighash forkid
+          success = checkSig c sig sighash pubKey (Script clean) forkid
       when (not success && get VERIFY_NULLFAIL fs && BS.length sigBS > 0)
            (terminate SigNullfail)
       finalize success
