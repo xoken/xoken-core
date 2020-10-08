@@ -105,6 +105,7 @@ data ScriptFlag
   | UTXO_AFTER_GENESIS
   deriving (Show, Enum)
 
+type Signature = BS.ByteString
 type SighashForkid = Bool
 
 data BaseSignatureChecker = BaseSignatureChecker
@@ -163,11 +164,13 @@ checkSequenceFull tx nIn n =
   sequenceLockTimeTypeFlag = 2 ^ 22
   sequenceLockTimeMask = 0x0000ffff
 
-cleanupScriptCode :: [ScriptOp] -> Sig -> SigHash -> Bool -> [ScriptOp]
-cleanupScriptCode script sig sighash forkidEnabled
-  | not forkidEnabled || not (hasForkIdFlag sighash) = delete sig script
+cleanupScriptCode :: [ScriptOp] -> Signature -> SigHash -> Bool -> [ScriptOp]
+cleanupScriptCode script sigBS sighash forkidEnabled
+  | not forkidEnabled || not (hasForkIdFlag sighash) = filter notSigPush script
   | otherwise = script
-  where delete = undefined
+ where
+  notSigPush (OP_PUSHDATA bs _) = not $ sigBS `BS.isPrefixOf` bs
+  notSigPush _                  = True
 
-sigHash :: BS.ByteString -> SigHash
+sigHash :: Signature -> SigHash
 sigHash = toEnum . fromIntegral . BS.last

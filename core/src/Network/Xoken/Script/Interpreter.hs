@@ -359,7 +359,7 @@ checksig finalize = popn 2 >>= \[sigBS, pubKeyBS] -> do
       maybePubKey = importPubKey pubKeyBS
   case (maybeSig, maybePubKey) of
     (Just sig, Just pubKey) -> do
-      let clean   = cleanupScriptCode script sig sighash forkid
+      let clean   = cleanupScriptCode script sigBS sighash forkid
           success = checkSig c sig sighash pubKey (Script clean) forkid
       when (not success && get VERIFY_NULLFAIL fs && BS.length sigBS > 0)
            (terminate SigNullfail)
