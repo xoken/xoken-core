@@ -1,7 +1,10 @@
 {-# LANGUAGE LambdaCase #-}
 module Network.Xoken.Script.Interpreter where
 
-import           Data.Word                      ( Word8 )
+import           Data.Word                      ( Word8
+                                                , Word32
+                                                , Word64
+                                                )
 import           Data.Maybe                     ( maybe )
 import           Data.Bits                      ( complement
                                                 , (.&.)
@@ -37,10 +40,15 @@ import           Network.Xoken.Script.Interpreter.Util
 maxScriptElementSizeBeforeGenesis = 520
 sequenceLocktimeDisableFlag = 2 ^ 31
 
-maxScriptNumLength :: Bool -> Bool -> Int
+maxScriptNumLength :: Integral a => Bool -> Bool -> a
 maxScriptNumLength genesis consensus | not genesis = 4
                                      | consensus   = 750 * 1000
                                      | otherwise   = 250 * 1000
+
+maxPubKeysPerMultiSig :: Integral a => Bool -> Bool -> a
+maxPubKeysPerMultiSig genesis consensus
+  | not genesis = 20
+  | otherwise   = fromIntegral (maxBound :: Word32)
 
 mandatoryScriptFlags :: ScriptFlags
 mandatoryScriptFlags = fromEnums
@@ -93,6 +101,8 @@ empty_env script checker = Env { stack                  = Seq.empty
                                , script_flags           = empty
                                , base_signature_checker = checker
                                , script_end_to_hash     = scriptOps script
+                               , is_consensus           = True
+                               , op_count               = 0
                                }
 
 opcode :: ScriptOp -> Cmd ()
@@ -143,7 +153,7 @@ opcode OP_2ROT =
   arrange 6 (\[x1, x2, x3, x4, x5, x6] -> [x3, x4, x5, x6, x1, x2])
 opcode OP_2SWAP = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
 opcode OP_IFDUP = peek >>= \x1 -> when (num x1 /= 0) (push x1)
-opcode OP_DEPTH = stacksize >>= push . bin
+opcode OP_DEPTH = stacksize >>= push . bin . BN . fromIntegral
 opcode OP_DROP  = pop >> pure ()
 opcode OP_DUP   = peek >>= push
 opcode OP_NIP   = arrange 2 (\[x1, x2] -> [x2])
@@ -367,7 +377,20 @@ checksig finalize = popn 2 >>= \[sigBS, pubKeyBS] -> do
     _ -> terminate InvalidSigOrPubKey
 
 checkmultisig :: (Bool -> Cmd ()) -> Cmd ()
-checkmultisig finalize = terminate (Unimplemented OP_CHECKMULTISIG)
+checkmultisig finalize = do
+  c       <- consensus
+  fs      <- flags
+  opCount <- opcount
+  x       <- pop
+  let nKeysCountSigned = fromIntegral (num x) :: Int
+      nKeysCount       = fromIntegral nKeysCountSigned :: Word64
+      genesis          = get UTXO_AFTER_GENESIS fs
+      opCount'         = opCount + nKeysCount
+  when (nKeysCountSigned < 0 || nKeysCount > maxPubKeysPerMultiSig genesis c)
+       (terminate PubKeyCount)
+  when (opCount' > 0) (terminate InvalidOpCount)
+  size <- stacksize
+  when (fromIntegral size < nKeysCount + 2) (terminate StackUnderflow)
 
 verify :: InterpreterError -> Bool -> Cmd ()
 verify error x = when (not x) (terminate error)

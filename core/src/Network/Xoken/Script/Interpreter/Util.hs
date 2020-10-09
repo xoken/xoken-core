@@ -1,5 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
+
 module Network.Xoken.Script.Interpreter.Util where
 
 import           Data.Int                       ( Int64 )

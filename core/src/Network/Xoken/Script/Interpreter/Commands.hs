@@ -3,6 +3,7 @@ module Network.Xoken.Script.Interpreter.Commands where
 
 import           Data.Word                      ( Word8
                                                 , Word32
+                                                , Word64
                                                 )
 import           Data.EnumBitSet                ( T
                                                 , toEnums
@@ -33,7 +34,7 @@ data InterpreterCommand a
     | Peek (Elem -> a)
     | PeekN Int ([Elem] -> a)
     | PeekNth Word32 (Elem -> a)
-    | StackSize (BN -> a)
+    | StackSize (Int -> a)
     -- alt stack
     | PushAlt Elem a
     | PopAlt (Elem -> a)
@@ -48,6 +49,8 @@ data InterpreterCommand a
     | Flags (ScriptFlags -> a)
     | Checker (BaseSignatureChecker -> a)
     | ScriptEndToHash ([ScriptOp] -> a)
+    | Consensus (Bool -> a)
+    | OpCount (Word64 -> a)
     deriving (Functor)
 
 type Cmd = Free InterpreterCommand
@@ -80,6 +83,8 @@ data InterpreterError
   | UnsatisfiedLockTime
   | SigNullfail
   | InvalidSigOrPubKey
+  | PubKeyCount
+  | InvalidOpCount
   deriving (Show, Eq)
 
 data Env = Env
@@ -91,6 +96,8 @@ data Env = Env
   , script_flags :: ScriptFlags
   , base_signature_checker :: BaseSignatureChecker
   , script_end_to_hash :: [ScriptOp]
+  , is_consensus :: Bool
+  , op_count :: Word64
   }
 
 data Branch = Branch
@@ -135,7 +142,7 @@ interpretCmd = go where
     PeekNth n k -> case stack e Seq.!? rindex (fromIntegral n) e of
       Just x -> go (k x) e
       _      -> (e, Error StackUnderflow)
-    StackSize k -> go (k $ BN $ fromIntegral $ length $ stack e) e
+    StackSize k -> go (k $ length $ stack e) e
     -- alt stack
     PushAlt x m -> go m (e { alt_stack = x Seq.<| alt_stack e })
     PopAlt k    -> case Seq.viewl (alt_stack e) of
@@ -168,6 +175,8 @@ interpretCmd = go where
     Flags           k -> go (k $ script_flags e) e
     Checker         k -> go (k $ base_signature_checker e) e
     ScriptEndToHash k -> go (k $ script_end_to_hash e) e
+    Consensus       k -> go (k $ is_consensus e) e
+    OpCount         k -> go (k $ op_count e) e
 
 -- signal
 terminate :: InterpreterError -> Cmd ()
@@ -201,7 +210,7 @@ peekn n = liftF (PeekN n id)
 peeknth :: Word32 -> Cmd Elem
 peeknth n = liftF (PeekNth n id)
 
-stacksize :: Cmd BN
+stacksize :: Cmd Int
 stacksize = liftF (StackSize id)
 
 -- alt stack
@@ -237,3 +246,9 @@ checker = liftF (Checker id)
 
 scriptendtohash :: Cmd [ScriptOp]
 scriptendtohash = liftF (ScriptEndToHash id)
+
+consensus :: Cmd Bool
+consensus = liftF (Consensus id)
+
+opcount :: Cmd Word64
+opcount = liftF (OpCount id)
