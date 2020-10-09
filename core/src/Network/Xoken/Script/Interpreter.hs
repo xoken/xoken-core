@@ -203,9 +203,9 @@ opcode OP_ADD       = binaryarith (+)
 opcode OP_SUB       = binaryarith (-)
 opcode OP_MUL       = binaryarith (*)
 opcode OP_DIV       = popn 2 >>= arith >>= \[x1, x2] ->
-  if x2 == 0 then terminate DivByZero else push $ bin $ x1 `div` x2
+  if x2 == 0 then terminate DivByZero else push $ bin (x1 `div` x2)
 opcode OP_MOD = popn 2 >>= arith >>= \[x1, x2] ->
-  if x2 == 0 then terminate ModByZero else push $ bin $ x1 `mod` x2
+  if x2 == 0 then terminate ModByZero else push $ bin (x1 `mod` x2)
 opcode OP_LSHIFT   = shift shiftL
 opcode OP_RSHIFT   = shift shiftR
 opcode OP_BOOLAND  = binaryarith (\a b -> truth (a /= 0 && b /= 0))
@@ -363,11 +363,9 @@ checksig finalize = popn 2 >>= \[sigBS, pubKeyBS] -> do
   fs     <- flags
   script <- scriptendtohash
   c      <- checker
-  let forkid      = get ENABLE_SIGHASH_FORKID fs
-      sighash     = sigHash sigBS
-      maybeSig    = importSig (BS.init sigBS)
-      maybePubKey = importPubKey pubKeyBS
-  case (maybeSig, maybePubKey) of
+  let forkid  = get ENABLE_SIGHASH_FORKID fs
+      sighash = sigHash sigBS
+  case (importSig (BS.init sigBS), importPubKey pubKeyBS) of
     (Just sig, Just pubKey) -> do
       let clean   = cleanupScriptCode script sigBS sighash forkid
           success = checkSig c sig sighash pubKey (Script clean) forkid
@@ -380,17 +378,27 @@ checkmultisig :: (Bool -> Cmd ()) -> Cmd ()
 checkmultisig finalize = do
   c       <- consensus
   fs      <- flags
+  script  <- scriptendtohash
   opCount <- opcount
-  x       <- pop
-  let nKeysCountSigned = fromIntegral (num x) :: Int
+  nKeysBN <- pop
+  let nKeysCountSigned = fromIntegral (num nKeysBN) :: Int
       nKeysCount       = fromIntegral nKeysCountSigned :: Word64
       genesis          = get UTXO_AFTER_GENESIS fs
       opCount'         = opCount + nKeysCount
   when (nKeysCountSigned < 0 || nKeysCount > maxPubKeysPerMultiSig genesis c)
        (terminate PubKeyCount)
   when (opCount' > 0) (terminate InvalidOpCount)
-  size <- stacksize
-  when (fromIntegral size < nKeysCount + 2) (terminate StackUnderflow)
+  keys    <- popn nKeysCountSigned
+  nSigsBN <- pop
+  let nSigsCountSigned = fromIntegral (num nSigsBN) :: Int
+      nSigsCount       = fromIntegral nSigsCountSigned :: Word64
+  when (nSigsCountSigned < 0 || nSigsCount > nKeysCount) (terminate SigCount)
+  sigs <- popn nSigsCountSigned
+  x    <- pop -- bug extra value
+  let forkid = get ENABLE_SIGHASH_FORKID fs
+      clean sigBS ops = cleanupScriptCode ops sigBS (sigHash sigBS) forkid
+      script' = foldr clean script sigs
+  pure ()
 
 verify :: InterpreterError -> Bool -> Cmd ()
 verify error x = when (not x) (terminate error)

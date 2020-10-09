@@ -84,6 +84,7 @@ data InterpreterError
   | SigNullfail
   | InvalidSigOrPubKey
   | PubKeyCount
+  | SigCount
   | InvalidOpCount
   deriving (Show, Eq)
 
