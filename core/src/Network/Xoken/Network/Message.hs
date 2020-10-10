@@ -34,6 +34,7 @@ import Network.Xoken.Block.Merkle
 import Network.Xoken.Constants
 import Network.Xoken.Crypto.Hash
 import Network.Xoken.Network.Common
+import Network.Xoken.Network.CompactBlock
 import Network.Xoken.Transaction.Common
 
 -- | Data type representing the header of a 'Message'. All messages sent between
@@ -86,6 +87,10 @@ data Message
     | MMempool
     | MReject !Reject
     | MSendHeaders
+    | MSendCompact !SendCompact
+    | MCompactBlock !CompactBlock
+    | MGetBlockTxns !GetBlockTxns
+    | MBlockTxns !BlockTxns
     | MOther !ByteString !ByteString
     deriving (Eq, Show)
 
@@ -111,6 +116,10 @@ msgType MMempool = MCMempool
 msgType (MReject _) = MCReject
 msgType MSendHeaders = MCSendHeaders
 msgType MGetAddr = MCGetAddr
+msgType (MSendCompact _) = MCSendCompact
+msgType (MCompactBlock _) = MCCompactBlock
+msgType (MGetBlockTxns _) = MCGetBlockTxns
+msgType (MBlockTxns _) = MCBlockTxns
 msgType (MOther c _) = MCOther c
 
 getDeflatedBlock :: Get (Maybe DefBlock)
@@ -148,6 +157,10 @@ getMessage net = do
                  MCAlert -> MAlert <$> get
                  MCReject -> MReject <$> get
                  MCOther c -> MOther c <$> getByteString (fromIntegral len)
+                 MCSendCompact -> MSendCompact <$> get
+                 MCCompactBlock -> MCompactBlock <$> get
+                 MCGetBlockTxns -> MGetBlockTxns <$> get
+                 MCBlockTxns -> MBlockTxns <$> get
         else case cmd of
                  MCGetAddr -> return MGetAddr
                  MCVerAck -> return MVerAck
@@ -179,6 +192,10 @@ putMessage net msg = do
                 MMempool -> (MCMempool, BS.empty)
                 MReject m -> (MCReject, encode m)
                 MSendHeaders -> (MCSendHeaders, BS.empty)
+                MSendCompact m -> (MCSendCompact, encode m)
+                MCompactBlock m -> (MCCompactBlock, encode m)
+                MGetBlockTxns m -> (MCGetBlockTxns, encode m)
+                MBlockTxns m -> (MCBlockTxns, encode m)
                 MOther c p -> (MCOther c, p)
         chk = checkSum32 payload
         len = fromIntegral $ BS.length payload
