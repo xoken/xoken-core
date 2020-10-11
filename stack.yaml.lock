@@ -123,6 +123,13 @@ packages:
       sha256: f26c665b702c8874fc28edc90d75a1acb3ccae967e131ff6d062af3837e32537
   original:
     hackage: tinylog-0.15.0
+- completed:
+    hackage: bits-bytestring-0.1.0.1@sha256:ba1a108bfa2788a80c3be434c2d2b8bc2ed791be54b9164d4b92898ba001e1fa,1825
+    pantry-tree:
+      size: 343
+      sha256: 90e0049819e1a141f7232dc6f7fcea425c85a923f601d7a242ec8c73da8b78d9
+  original:
+    hackage: bits-bytestring-0.1.0.1
 snapshots:
 - completed:
     size: 523700

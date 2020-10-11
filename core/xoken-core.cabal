@@ -45,7 +45,8 @@ library
       Network.Xoken.Block.Common
       Network.Xoken.Transaction.Common
       Network.Xoken.Script.Standard
-
+      Network.Xoken.Network.CompactBlock
+      
   other-modules:
       Network.Xoken.Crypto.Signature
       Network.Xoken.Keys.Common
