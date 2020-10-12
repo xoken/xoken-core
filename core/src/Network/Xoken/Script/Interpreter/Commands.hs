@@ -18,6 +18,11 @@ import qualified Data.Sequence                 as Seq
 import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.Interpreter.Util
 
+maxOpsPerScript :: Integral a => Bool -> Bool -> a
+maxOpsPerScript genesis consensus
+  | not genesis = 500
+  | otherwise   = fromIntegral (maxBound :: Word32)
+
 type Elem = BS.ByteString
 type Stack a = Seq.Seq a
 
@@ -51,6 +56,7 @@ data InterpreterCommand a
     | ScriptEndToHash ([ScriptOp] -> a)
     | Consensus (Bool -> a)
     | OpCount (Word64 -> a)
+    | AddToOpCount Word64 a
     deriving (Functor)
 
 type Cmd = Free InterpreterCommand
@@ -178,6 +184,13 @@ interpretCmd = go where
     ScriptEndToHash k -> go (k $ script_end_to_hash e) e
     Consensus       k -> go (k $ is_consensus e) e
     OpCount         k -> go (k $ op_count e) e
+    AddToOpCount x m -> if opcount' > maxOpsPerScript genesis c
+      then (e { op_count = opcount' }, Error InvalidOpCount)
+      else go m (e { op_count = opcount' })
+     where
+      genesis  = get UTXO_AFTER_GENESIS (script_flags e)
+      opcount' = op_count e + x
+      c        = is_consensus e
 
 -- signal
 terminate :: InterpreterError -> Cmd ()
@@ -253,3 +266,6 @@ consensus = liftF (Consensus id)
 
 opcount :: Cmd Word64
 opcount = liftF (OpCount id)
+
+addtoopcount :: Word64 -> Cmd ()
+addtoopcount x = liftF (AddToOpCount x ())

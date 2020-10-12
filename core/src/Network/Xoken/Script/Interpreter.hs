@@ -30,6 +30,7 @@ import           Crypto.Hash                    ( hashWith
 import           Crypto.Secp256k1               ( importSig
                                                 , importPubKey
                                                 )
+import           Data.Serialize                 ( encode )
 import qualified Data.ByteString               as BS
 import qualified Data.ByteArray                as BA
 import qualified Data.Sequence                 as Seq
@@ -74,22 +75,25 @@ interpretWith :: Env -> (Env, Maybe InterpreterError)
 interpretWith env = go (script_end_to_hash env) env where
   go (op : rest) e
     | failed_branches e == 0 && not (non_top_level_return e) = next
-      (opcode op)
+      (increment_ops op)
       (if op == OP_CODESEPARATOR then e { script_end_to_hash = rest } else e)
     | otherwise = case op of
       OP_IF       -> next (pushbranch failed_branch) e
       OP_NOTIF    -> next (pushbranch failed_branch) e
-      OP_VERIF    -> next (opcode op) e
-      OP_VERNOTIF -> next (opcode op) e
-      OP_ELSE     -> next (opcode op) e
-      OP_ENDIF    -> next (opcode op) e
-      _           -> go rest e
+      OP_VERIF    -> next (increment_ops op) e
+      OP_VERNOTIF -> next (increment_ops op) e
+      OP_ELSE     -> next (increment_ops op) e
+      OP_ENDIF    -> next (increment_ops op) e
+      _           -> next (pure ()) e
    where
-    next cmd e = case interpretCmd cmd e of
+    next cmd e = case interpretCmd (addtoopcount 1 >> cmd) e of
       (e', OK         ) -> go rest e'
       (e', Error error) -> (e', Just error)
       (e', Return     ) -> (e', Nothing)
     failed_branch = Branch { satisfied = False, is_else_branch = False }
+    is_over_OP_16 op = BS.last (encode op) > 0x60
+    increment_ops op | is_over_OP_16 op = addtoopcount 1 >> opcode op
+                     | otherwise        = opcode op
   go [] e = (e, Nothing)
 
 empty_env :: Script -> BaseSignatureChecker -> Env
@@ -384,20 +388,19 @@ checkmultisig finalize = do
   let nKeysCountSigned = fromIntegral (num nKeysBN) :: Int
       nKeysCount       = fromIntegral nKeysCountSigned :: Word64
       genesis          = get UTXO_AFTER_GENESIS fs
-      opCount'         = opCount + nKeysCount
   when (nKeysCountSigned < 0 || nKeysCount > maxPubKeysPerMultiSig genesis c)
        (terminate PubKeyCount)
-  when (opCount' > 0) (terminate InvalidOpCount)
+  addtoopcount nKeysCount
   keys    <- popn nKeysCountSigned
   nSigsBN <- pop
   let nSigsCountSigned = fromIntegral (num nSigsBN) :: Int
       nSigsCount       = fromIntegral nSigsCountSigned :: Word64
   when (nSigsCountSigned < 0 || nSigsCount > nKeysCount) (terminate SigCount)
   sigs <- popn nSigsCountSigned
-  x    <- pop -- bug extra value
   let forkid = get ENABLE_SIGHASH_FORKID fs
       clean sigBS ops = cleanupScriptCode ops sigBS (sigHash sigBS) forkid
       script' = foldr clean script sigs
+  x <- pop -- bug extra value
   pure ()
 
 verify :: InterpreterError -> Bool -> Cmd ()
