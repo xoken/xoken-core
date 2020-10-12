@@ -198,7 +198,7 @@ data BlockTxns =
     BlockTxns
         { btBlockhash :: !BlockHash
         , btTransactionsLength :: !Word16
-        , btTransactions :: ![Word16]
+        , btTransactions :: ![Tx]
         }
     deriving (Eq, Show, Read, Generic)
 
@@ -206,14 +206,10 @@ instance Serialize BlockTxns where
     get = do
         bhash <- get
         (CompactSize txnlen) <- get
-        txns <-
-            replicateM
-                (fromIntegral txnlen)
-                (do (CompactSize idx) <- get
-                    return idx)
+        txns <- replicateM (fromIntegral txnlen) get
         return $ BlockTxns bhash txnlen txns
     put (BlockTxns bhash txnlen txns) = do
         put bhash
         putCompactSize txnlen
-        forM_ txns putCompactSize
+        forM_ txns put
 --
