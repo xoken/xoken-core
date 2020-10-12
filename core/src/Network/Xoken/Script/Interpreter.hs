@@ -78,13 +78,13 @@ interpretWith env = go (script_end_to_hash env) env where
       (increment_ops op)
       (if op == OP_CODESEPARATOR then e { script_end_to_hash = rest } else e)
     | otherwise = case op of
-      OP_IF       -> next (pushbranch failed_branch) e
-      OP_NOTIF    -> next (pushbranch failed_branch) e
+      OP_IF       -> next (addtoopcount 1 >> pushbranch failed_branch) e
+      OP_NOTIF    -> next (addtoopcount 1 >> pushbranch failed_branch) e
       OP_VERIF    -> next (increment_ops op) e
       OP_VERNOTIF -> next (increment_ops op) e
       OP_ELSE     -> next (increment_ops op) e
       OP_ENDIF    -> next (increment_ops op) e
-      _           -> next (pure ()) e
+      _           -> next (increment_ops OP_NOP) e
    where
     next cmd e = case interpretCmd (addtoopcount 1 >> cmd) e of
       (e', OK         ) -> go rest e'
