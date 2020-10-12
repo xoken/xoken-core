@@ -87,7 +87,8 @@ data InterpreterError
   | NumOverflow
   | NegativeLocktime
   | UnsatisfiedLockTime
-  | SigNullfail
+  | SigNullFail
+  | SigNullDummy
   | InvalidSigOrPubKey
   | PubKeyCount
   | SigCount

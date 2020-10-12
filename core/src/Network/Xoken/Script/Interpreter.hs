@@ -367,14 +367,21 @@ checksig finalize = popn 2 >>= \[sigBS, pubKeyBS] -> do
   fs     <- flags
   script <- scriptendtohash
   c      <- checker
-  let forkid  = get ENABLE_SIGHASH_FORKID fs
-      sighash = sigHash sigBS
+  let
+    forkid  = get ENABLE_SIGHASH_FORKID fs
+    sighash = sigHash sigBS
+    clean   = cleanupScriptCode script sigBS sighash forkid
+    check sig sighash pubKey =
+      checkSig c sig sighash pubKey (Script clean) forkid
+    verifynull = get VERIFY_NULLFAIL fs
+  singlesig finalize check sigBS pubKeyBS verifynull
+
+singlesig finalize check sigBS pubKeyBS verifynull =
   case (importSig (BS.init sigBS), importPubKey pubKeyBS) of
     (Just sig, Just pubKey) -> do
-      let clean   = cleanupScriptCode script sigBS sighash forkid
-          success = checkSig c sig sighash pubKey (Script clean) forkid
-      when (not success && get VERIFY_NULLFAIL fs && BS.length sigBS > 0)
-           (terminate SigNullfail)
+      let success = check sig (sigHash sigBS) pubKey
+      when (not success && verifynull && BS.length sigBS > 0)
+           (terminate SigNullFail)
       finalize success
     _ -> terminate InvalidSigOrPubKey
 
@@ -382,6 +389,7 @@ checkmultisig :: (Bool -> Cmd ()) -> Cmd ()
 checkmultisig finalize = do
   c       <- consensus
   fs      <- flags
+  impl    <- checker
   script  <- scriptendtohash
   opCount <- opcount
   nKeysBN <- pop
@@ -399,9 +407,22 @@ checkmultisig finalize = do
   sigs <- popn nSigsCountSigned
   let forkid = get ENABLE_SIGHASH_FORKID fs
       clean sigBS ops = cleanupScriptCode ops sigBS (sigHash sigBS) forkid
-      script' = foldr clean script sigs
+      script'    = foldr clean script sigs
+      verifynull = get VERIFY_NULLFAIL fs
+      check sig sighash pubKey =
+        checkSig impl sig sighash pubKey (Script script') forkid
   x <- pop -- bug extra value
-  pure ()
+  when (get VERIFY_NULLDUMMY fs && BS.length x > 0) (terminate SigNullDummy)
+  multisig finalize check sigs keys verifynull
+
+multisig finalize check sigs keys verifynull = case (sigs, keys) of
+  ([], []) -> finalize True
+  (_ , []) -> finalize False
+  (sigBS : sigs', keyBS : keys') ->
+    singlesig (continuation sigs' keys') check sigBS keyBS verifynull
+ where
+  continuation sigs' keys' success =
+    multisig finalize check (if success then sigs' else sigs) keys' verifynull
 
 verify :: InterpreterError -> Bool -> Cmd ()
 verify error x = when (not x) (terminate error)
