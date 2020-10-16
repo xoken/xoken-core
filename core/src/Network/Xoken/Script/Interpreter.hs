@@ -74,7 +74,7 @@ standardScriptFlags = fromEnums
 interpretWith :: Env -> (Env, Maybe InterpreterError)
 interpretWith env = go (script_end_to_hash env) env where
   go (op : rest) e
-    | failed_branches e == 0 && not (non_top_level_return e) = next
+    | execute op e = next
       (increment_ops op)
       (if op == OP_CODESEPARATOR then e { script_end_to_hash = rest } else e)
     | otherwise = case op of
@@ -86,6 +86,9 @@ interpretWith env = go (script_end_to_hash env) env where
       OP_ENDIF    -> next (increment_ops op) e
       _           -> next (increment_ops OP_NOP) e
    where
+    execute op e =
+      (failed_branches e == 0)
+        && (not (non_top_level_return e) || op == OP_RETURN)
     next cmd e = case interpretCmd (addtoopcount 1 >> cmd) e of
       (e', OK         ) -> go rest e'
       (e', Error error) -> (e', Just error)
