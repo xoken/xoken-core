@@ -292,7 +292,7 @@ pushdata bs size = flag VERIFY_MINIMALDATA >>= \case
     _    -> push bs
 
 isOverMaxElemSize :: Integral a => a -> Cmd Bool
-isOverMaxElemSize n = flag UTXO_AFTER_GENESIS >>= pure . isOver
+isOverMaxElemSize n = flag UTXO_AFTER_GENESIS >>= pure . isOver . not
   where isOver = (&& n > fromIntegral maxScriptElementSizeBeforeGenesis)
 
 arrange :: Int -> ([Elem] -> [Elem]) -> Cmd ()

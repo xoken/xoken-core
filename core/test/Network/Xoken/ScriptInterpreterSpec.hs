@@ -40,14 +40,33 @@ interpret = interpretWith . env
 spec :: Spec
 spec = do
   describe "pushdata" $ do
-    testNoFlags Nothing [OP_PUSHDATA BS.empty OPDATA1]
-    testNoFlags Nothing [OP_PUSHDATA BS.empty OPDATA2]
-    testNoFlags Nothing [OP_PUSHDATA BS.empty OPDATA4]
-    testNoFlags Nothing [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1]
-    terminatesWith MinimalData [OP_PUSHDATA BS.empty OPDATA1]
-    terminatesWith MinimalData [OP_PUSHDATA BS.empty OPDATA1]
-    terminatesWith MinimalData [OP_PUSHDATA BS.empty OPDATA1]
-    terminatesWith MinimalData [OP_PUSHDATA (BS.pack [2, 0]) OPDATA1]
+    let opcode_xs  = BS.pack $ replicate 0x4b 1
+        opdata1_xs = BS.pack $ replicate 0xff 1
+        opdata2_xs = BS.pack $ replicate 0xffff 1
+
+    testNoFlags Nothing [OP_PUSHDATA opcode_xs OPCODE]
+    testNoFlags Nothing [OP_PUSHDATA opcode_xs OPDATA1]
+    testNoFlags Nothing [OP_PUSHDATA opcode_xs OPDATA2]
+    testNoFlags Nothing [OP_PUSHDATA opcode_xs OPDATA4]
+
+    testPack [] [OP_PUSHDATA opcode_xs OPCODE] [BS.unpack opcode_xs]
+    terminatesWith MinimalData [OP_PUSHDATA opcode_xs OPDATA1]
+    terminatesWith MinimalData [OP_PUSHDATA opcode_xs OPDATA2]
+    terminatesWith MinimalData [OP_PUSHDATA opcode_xs OPDATA4]
+
+    testNoFlags Nothing [OP_PUSHDATA opdata1_xs OPDATA1]
+    testNoFlags Nothing [OP_PUSHDATA opdata1_xs OPDATA2]
+    testNoFlags Nothing [OP_PUSHDATA opdata1_xs OPDATA4]
+
+    testPack [] [OP_PUSHDATA opdata1_xs OPDATA1] [BS.unpack opdata1_xs]
+    terminatesWith MinimalData [OP_PUSHDATA opdata1_xs OPDATA2]
+    terminatesWith MinimalData [OP_PUSHDATA opdata1_xs OPDATA4]
+
+    testNoFlags (Just PushSize) [OP_PUSHDATA opdata2_xs OPDATA2]
+    testNoFlags (Just PushSize) [OP_PUSHDATA opdata2_xs OPDATA4]
+
+    testPack [] [OP_PUSHDATA opdata2_xs OPDATA2] [BS.unpack opdata2_xs]
+    terminatesWith MinimalData [OP_PUSHDATA opdata2_xs OPDATA4]
   describe "stack" $ do
     test []                          []
     test [OP_1]                      [1]
@@ -60,27 +79,12 @@ spec = do
     test [OP_1, OP_2, OP_1, OP_PICK] [1, 2, 1]
     test [OP_1, OP_0, OP_ROLL]       [1]
     test [OP_1, OP_2, OP_1, OP_ROLL] [2, 1]
-    test [OP_1, OP_TOALTSTACK, OP_FROMALTSTACK] [1]
+    terminatesWith InvalidAltstackOperation [OP_FROMALTSTACK]
+    test [OP_1, OP_TOALTSTACK, OP_FROMALTSTACK]       [1]
     test [OP_1, OP_TOALTSTACK, OP_2, OP_FROMALTSTACK] [2, 1]
+    terminatesWith StackUnderflow [OP_DROP]
   describe "interpreter extra" $ do
     testNoFlags Nothing [OP_NOP1]
-  describe "interpret failure" $ do
-    terminatesWith StackUnderflow        [OP_DROP]
-    terminatesWith UnbalancedConditional [OP_IF]
-    terminatesWith UnbalancedConditional
-                   [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
-    terminatesWith UnbalancedConditional [OP_ELSE]
-    terminatesWith UnbalancedConditional [OP_ENDIF]
-    terminatesWith UnbalancedConditional
-                   [OP_1, OP_IF, OP_IF, OP_ENDIF, OP_ELSE, OP_2, OP_ENDIF]
-    terminatesWith UnbalancedConditional
-                   [OP_0, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF]
-    terminatesWith UnbalancedConditional    [OP_0, OP_RETURN, OP_ELSE]
-    terminatesWith InvalidAltstackOperation [OP_FROMALTSTACK]
-    terminatesWith InvalidNumberRange       [OP_1, OP_1NEGATE, OP_LSHIFT]
-    terminatesWith InvalidOperandSize       [OP_0, OP_1, OP_AND]
-    terminatesWith MinimalIf                [OP_2, OP_IF, OP_ENDIF]
-    terminatesWith MinimalIf                [opPushData (BS.pack [1, 2]), OP_IF]
     terminatesWith DiscourageUpgradableNOPs [OP_NOP1]
   describe "interpret control flow" $ do
     test [OP_0, OP_IF, OP_ENDIF]                      []
@@ -92,6 +96,18 @@ spec = do
     test [OP_1, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF] [1]
     test [OP_RETURN, OP_ELSE]                         []
     testNoFlags (Just OpReturn) [OP_RETURN]
+    terminatesWith UnbalancedConditional [OP_IF]
+    terminatesWith UnbalancedConditional
+                   [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
+    terminatesWith UnbalancedConditional [OP_ELSE]
+    terminatesWith UnbalancedConditional [OP_ENDIF]
+    terminatesWith UnbalancedConditional
+                   [OP_1, OP_IF, OP_IF, OP_ENDIF, OP_ELSE, OP_2, OP_ENDIF]
+    terminatesWith UnbalancedConditional
+                   [OP_0, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF]
+    terminatesWith UnbalancedConditional [OP_0, OP_RETURN, OP_ELSE]
+    terminatesWith MinimalIf             [OP_2, OP_IF, OP_ENDIF]
+    terminatesWith MinimalIf             [opPushData (BS.pack [1, 2]), OP_IF]
   describe "BN conversion" $ do
     it "encode 0" $ bin 0 `shouldBe` BS.pack []
     it "encode 1" $ bin 1 `shouldBe` BS.pack [1]
@@ -119,6 +135,7 @@ spec = do
     testBS [0x12, 0x34] [OP_XOR]    [0x26]
     test [OP_1, OP_1, OP_EQUAL] [1]
     test [OP_1, OP_2, OP_EQUAL] [0]
+    terminatesWith InvalidOperandSize [OP_0, OP_1, OP_AND]
   describe "Arithmetic" $ do
     test [OP_1, OP_2, OP_ADD]          [3]
     test [OP_3, OP_4, OP_SUB]          [-1]
@@ -134,8 +151,9 @@ spec = do
     testPack [[1], [7]]     [OP_LSHIFT] [[128]]
     testPack [[1], [8]]     [OP_LSHIFT] [[0]]
     test [OP_16, OP_2DIV] [8]
-    terminatesWith DivByZero [OP_0, OP_0, OP_DIV]
-    terminatesWith ModByZero [OP_0, OP_0, OP_MOD]
+    terminatesWith DivByZero          [OP_0, OP_0, OP_DIV]
+    terminatesWith ModByZero          [OP_0, OP_0, OP_MOD]
+    terminatesWith InvalidNumberRange [OP_1, OP_1NEGATE, OP_LSHIFT]
   describe "Crypto" $ do
     testBS [0x1234] [OP_RIPEMD160] [0xC39867E393CB061B837240862D9AD318C176A96D]
     testBS [0x1234] [OP_SHA1]      [0xFFA76D854A2969E7B9D83868D455512FCE0FD74D]
