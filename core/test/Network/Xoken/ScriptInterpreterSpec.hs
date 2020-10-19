@@ -3,6 +3,7 @@ module Network.Xoken.ScriptInterpreterSpec
   )
 where
 
+import           Data.Foldable                  ( toList )
 import           Data.List                      ( intercalate )
 import           Data.Word                      ( Word8 )
 import           Data.EnumBitSet                ( fromEnums
@@ -14,10 +15,12 @@ import           Data.ByteString.Builder        ( toLazyByteString
 import qualified Data.ByteString               as BS
 import qualified Data.Sequence                 as Seq
 import           Test.Hspec
+import           Test.QuickCheck
 import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.Interpreter
 import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.Util
+import           Network.Xoken.Test
 
 sigChecker :: BaseSignatureChecker
 sigChecker = txSigChecker net txTo nIn amount inputIndex where
@@ -137,8 +140,10 @@ spec = do
     test [OP_1, OP_2, OP_EQUAL] [0]
     terminatesWith InvalidOperandSize [OP_0, OP_1, OP_AND]
   describe "Arithmetic" $ do
-    test [OP_1, OP_2, OP_ADD]          [3]
-    test [OP_3, OP_4, OP_SUB]          [-1]
+    it "performs OP_ADD on OP_1..16" $ binary_arithmetic OP_ADD (+)
+    it "performs OP_SUB on OP_1..16" $ binary_arithmetic OP_SUB (-)
+    it "performs OP_MUL on OP_1..16" $ binary_arithmetic OP_MUL (*)
+    it "performs OP_DIV on OP_1..16" $ binary_arithmetic OP_DIV div
     test [OP_1, OP_2, OP_3, OP_WITHIN] [0]
     test [OP_2, OP_1, OP_3, OP_WITHIN] [1]
     test [OP_1, OP_4, OP_LSHIFT]       [16]
@@ -168,11 +173,21 @@ spec = do
       [0xA23421F2BA909C885A3077BB6F8EB4312487797693BBCFE7E311F797E3C5B8FA]
 
 test :: [ScriptOp] -> [BN] -> SpecWith (Arg Expectation)
-test ops expected_elems =
-  it ("returns " ++ show expected_elems ++ " given " ++ show ops)
-    $          (stack env                            , r)
-    `shouldBe` (Seq.fromList $ bin <$> expected_elems, Nothing)
-  where (env, r) = interpret (Script ops)
+test ops expected_nums =
+  it ("returns " ++ show expected_nums ++ " given " ++ show ops) $ do
+    elems env `shouldBe` bin <$> expected_nums
+    error `shouldBe` Nothing
+  where (env, error) = interpret (Script ops)
+
+elems = toList . stack
+
+binary_arithmetic op f = property $ forAll arbitraryIntScriptOp $ \a_op ->
+  forAll arbitraryIntScriptOp $ \b_op -> do
+    let (env, error) = interpret (Script [a_op, b_op, op])
+    error `shouldBe` Nothing
+    case (scriptOpToInt a_op, scriptOpToInt b_op) of
+      (Right a, Right b) -> num <$> elems env `shouldBe` [fromIntegral $ f a b]
+      _                  -> pure ()
 
 ftestBS
   :: (a -> BS.ByteString)
