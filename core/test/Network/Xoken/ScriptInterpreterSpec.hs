@@ -127,13 +127,24 @@ spec = do
     it "decode -256" $ num (BS.pack [0, 129]) `shouldBe` -256
     terminatesWith PushSize [OP_1, OP_1NEGATE, OP_NUM2BIN]
   describe "Data manipulation" $ do
-    testBS []           [OP_0, OP_0, OP_CAT] [0x0]
-    testBS [0x12, 0x34] [OP_CAT]             [0x1234]
-    testBS [0x1234]     [OP_1, OP_SPLIT]     [0x12, 0x34]
-    terminatesWith InvalidSplitRange
-                   [opPushData $ rawNumToBS 0x1234, OP_1NEGATE, OP_SPLIT]
-    terminatesWith InvalidSplitRange
-                   [opPushData $ rawNumToBS 0x1234, OP_3, OP_SPLIT]
+    testPack [] [OP_0, OP_0, OP_CAT] [[]]
+    it "performs OP_CAT on arbitrary data"
+      $ property
+      $ forAll arbitraryBS
+      $ \bs1 -> forAll arbitraryBS $ \bs2 ->
+          test_script [opPushData bs1, opPushData bs2, OP_CAT]
+            $ success_with_elem_check (`shouldBe` [BS.append bs1 bs2])
+    it "performs OP_SPLIT on arbitrary data"
+      $ property
+      $ forAll arbitraryBS
+      $ \bs -> forAll arbitraryIntScriptOp $ \n_op -> case scriptOpToInt n_op of
+          Right n ->
+            test_script [opPushData bs, n_op, OP_SPLIT]
+              $ if n < 0 || n > BS.length bs
+                  then const (`shouldBe` Just InvalidSplitRange)
+                  else success_with_elem_check (`shouldBe` [bs1, bs2])
+            where (bs1, bs2) = BS.splitAt n bs
+          _ -> pure ()
   describe "Bitwise logic" $ do
     testBS [0x1234]     [OP_INVERT] [0xEDCB]
     testBS [0x12, 0x34] [OP_AND]    [0x10]
@@ -143,80 +154,62 @@ spec = do
     test [OP_1, OP_2, OP_EQUAL] [0]
     terminatesWith InvalidOperandSize [OP_0, OP_1, OP_AND]
   describe "Arithmetic" $ do
-    it "performs OP_1ADD on OP_1..16" $ unary_arithmetic OP_1ADD succ
-    it "performs OP_1SUB on OP_1..16" $ unary_arithmetic OP_1SUB pred
-    it "performs OP_NEGATE on OP_1..16" $ unary_arithmetic OP_NEGATE negate
-    it "performs OP_ABS on OP_1..16" $ unary_arithmetic OP_ABS abs
-    it "performs OP_NOT on OP_0"
-      $ success_with_elem_check [OP_0, OP_NOT]
-      $ \elems -> num <$> elems `shouldBe` [1]
-    it "performs OP_NOT on OP_1..16" $ unary_arithmetic OP_NOT (truth . (== 0))
-    it "performs OP_0NOTEQUAL on OP_0"
-      $ success_with_elem_check [OP_0, OP_0NOTEQUAL]
-      $ \elems -> num <$> elems `shouldBe` [0]
-    it "performs OP_0NOTEQUAL on OP_1..16"
-      $ unary_arithmetic OP_0NOTEQUAL (truth . (/= 0))
-    it "performs OP_ADD on OP_1..16" $ binary_arithmetic OP_ADD (+)
-    it "performs OP_SUB on OP_1..16" $ binary_arithmetic OP_SUB (-)
-    it "performs OP_MUL on OP_1..16" $ binary_arithmetic OP_MUL (*)
-    it "performs OP_DIV on OP_1..16" $ binary_arithmetic OP_DIV div
-    it "performs OP_MOD on OP_1..16" $ binary_arithmetic OP_MOD mod
-    it "performs OP_LSHIFT on OP_1..16" $ test_shift OP_LSHIFT shiftL
-    it "performs OP_RSHIFT on OP_1..16" $ test_shift OP_RSHIFT shiftR
-    testPack [[], [64]]     [OP_LSHIFT] [[]]
-    testPack [[], [64]]     [OP_RSHIFT] [[]]
-    testPack [[1], [64]]    [OP_LSHIFT] [[0]]
-    testPack [[1], [64]]    [OP_RSHIFT] [[0]]
-    testPack [[1, 2], [64]] [OP_LSHIFT] [[0, 0]]
-    testPack [[1, 2], [64]] [OP_RSHIFT] [[0, 0]]
-    testPack [[1], [7]]     [OP_LSHIFT] [[128]]
-    testPack [[1], [8]]     [OP_LSHIFT] [[0]]
-    terminatesWith DivByZero          [OP_0, OP_0, OP_DIV]
-    terminatesWith ModByZero          [OP_0, OP_0, OP_MOD]
-    terminatesWith InvalidNumberRange [OP_1, OP_1NEGATE, OP_LSHIFT]
-    it "performs OP_BOOLAND on OP_1..16"
-      $ binary_arithmetic OP_BOOLAND (\a b -> truth (a /= 0 && b /= 0))
-    it "performs OP_BOOLOR on OP_1..16"
-      $ binary_arithmetic OP_BOOLOR (\a b -> truth (a /= 0 || b /= 0))
-    it "performs OP_RSHIFT on OP_1..16" $ binary_arithmetic OP_RSHIFT shiftR
-    it "performs OP_NUMEQUAL on OP_1..16"
-      $ binary_arithmetic OP_NUMEQUAL (btruth (==))
-    it "performs OP_NUMEQUALVERIFY on OP_1..16"
+    it "performs OP_1ADD on arbitrary data" $ unary_arith_success OP_1ADD succ
+    it "performs OP_1SUB on arbitrary data" $ unary_arith_success OP_1SUB pred
+    it "performs OP_NEGATE on arbitrary data"
+      $ unary_arith_success OP_NEGATE negate
+    it "performs OP_ABS on arbitrary data" $ unary_arith_success OP_ABS abs
+    it "performs OP_NOT on arbitrary data"
+      $ unary_arith_success OP_NOT (truth . (== 0))
+    it "performs OP_0NOTEQUAL on arbitrary data"
+      $ unary_arith_success OP_0NOTEQUAL (truth . (/= 0))
+    it "performs OP_ADD on arbitrary data" $ binary_arith_success OP_ADD (+)
+    it "performs OP_SUB on arbitrary data" $ binary_arith_success OP_SUB (-)
+    it "performs OP_MUL on arbitrary data" $ binary_arith_success OP_MUL (*)
+    it "performs OP_DIV on arbitrary data" $ binary_arith_test OP_DIV $ \a b ->
+      if b == 0
+        then const (`shouldBe` Just DivByZero)
+        else success_with_elem_check $ num_check (`shouldBe` [a `div` b])
+    it "performs OP_MOD on arbitrary data" $ binary_arith_test OP_MOD $ \a b ->
+      if b == 0
+        then const (`shouldBe` Just ModByZero)
+        else success_with_elem_check $ num_check (`shouldBe` [a `mod` b])
+    it "performs OP_LSHIFT on arbitrary data" $ test_shift OP_LSHIFT shiftL
+    it "performs OP_RSHIFT on arbitrary data" $ test_shift OP_RSHIFT shiftR
+    it "performs OP_BOOLAND on arbitrary data"
+      $ binary_arith_success OP_BOOLAND (\a b -> truth (a /= 0 && b /= 0))
+    it "performs OP_BOOLOR on arbitrary data"
+      $ binary_arith_success OP_BOOLOR (\a b -> truth (a /= 0 || b /= 0))
+    it "performs OP_NUMEQUAL on arbitrary data"
+      $ binary_arith_success OP_NUMEQUAL (btruth (==))
+    it "performs OP_NUMEQUALVERIFY on arbitrary data"
+      $ binary_arith_test OP_NUMEQUALVERIFY
+      $ \a b -> if a == b
+          then success_with_elem_check (`shouldBe` [])
+          else const (`shouldBe` Just NumEqualVerify)
+    it "performs OP_NUMNOTEQUAL on arbitrary data"
+      $ binary_arith_success OP_NUMNOTEQUAL (btruth (/=))
+    it "performs OP_LESSTHAN on arbitrary data"
+      $ binary_arith_success OP_LESSTHAN (btruth (<))
+    it "performs OP_GREATERTHAN on arbitrary data"
+      $ binary_arith_success OP_GREATERTHAN (btruth (>))
+    it "performs OP_LESSTHANOREQUAL on arbitrary data"
+      $ binary_arith_success OP_LESSTHANOREQUAL (btruth (<=))
+    it "performs OP_GREATERTHANOREQUAL on arbitrary data"
+      $ binary_arith_success OP_GREATERTHANOREQUAL (btruth (>=))
+    it "performs OP_MIN on arbitrary data" $ binary_arith_success OP_MIN min
+    it "performs OP_MAX on arbitrary data" $ binary_arith_success OP_MAX max
+    it "performs OP_WITHIN on arbitrary data"
       $ property
-      $ forAll arbitraryIntScriptOp
-      $ \a_op -> forAll arbitraryIntScriptOp $ \b_op -> do
-          let (env, error) = interpret (Script [a_op, b_op, OP_NUMEQUALVERIFY])
-          if a_op == b_op
-            then do
-              error `shouldBe` Nothing
-              elems env `shouldBe` []
-            else error `shouldBe` Just NumEqualVerify
-    it "performs OP_NUMNOTEQUAL on OP_1..16"
-      $ binary_arithmetic OP_NUMNOTEQUAL (btruth (/=))
-    it "performs OP_LESSTHAN on OP_1..16"
-      $ binary_arithmetic OP_LESSTHAN (btruth (<))
-    it "performs OP_GREATERTHAN on OP_1..16"
-      $ binary_arithmetic OP_GREATERTHAN (btruth (>))
-    it "performs OP_LESSTHANOREQUAL on OP_1..16"
-      $ binary_arithmetic OP_LESSTHANOREQUAL (btruth (<=))
-    it "performs OP_GREATERTHANOREQUAL on OP_1..16"
-      $ binary_arithmetic OP_GREATERTHANOREQUAL (btruth (>=))
-    it "performs OP_MIN on OP_1..16" $ binary_arithmetic OP_MIN min
-    it "performs OP_MAX on OP_1..16" $ binary_arithmetic OP_MAX max
-    it "performs OP_WITHIN on OP_1..16"
-      $ property
-      $ forAll arbitraryIntScriptOp
-      $ \x_op -> forAll arbitraryIntScriptOp $ \min_op ->
-          forAll arbitraryIntScriptOp $ \max_op -> do
-            let (env, error) =
-                  interpret (Script [x_op, min_op, max_op, OP_WITHIN])
-            error `shouldBe` Nothing
-            case
-                (scriptOpToInt x_op, scriptOpToInt min_op, scriptOpToInt max_op)
-              of
-                (Right x, Right min, Right max) ->
-                  num <$> elems env `shouldBe` [truth (min <= x && x < max)]
-                _ -> pure ()
+      $ forAll arbitraryPushOp
+      $ \x_op -> forAll arbitraryPushOp $ \min_op ->
+          forAll arbitraryPushOp $ \max_op ->
+            case (pushOpToBN x_op, pushOpToBN min_op, pushOpToBN max_op) of
+              (Right x, Right min, Right max) ->
+                test_script [x_op, min_op, max_op, OP_WITHIN]
+                  $ success_with_elem_check
+                  $ num_check (`shouldBe` [truth (min <= x && x < max)])
+              _ -> pure ()
   describe "Crypto" $ do
     testBS [0x1234] [OP_RIPEMD160] [0xC39867E393CB061B837240862D9AD318C176A96D]
     testBS [0x1234] [OP_SHA1]      [0xFFA76D854A2969E7B9D83868D455512FCE0FD74D]
@@ -232,42 +225,53 @@ spec = do
 
 test :: [ScriptOp] -> [BN] -> SpecWith (Arg Expectation)
 test ops expected_nums =
-  it ("returns " ++ show expected_nums ++ " given " ++ show ops) $ do
-    elems env `shouldBe` bin <$> expected_nums
-    error `shouldBe` Nothing
-  where (env, error) = interpret (Script ops)
+  it ("returns " ++ show expected_nums ++ " given " ++ show ops)
+    $ test_script ops
+    $ success_with_elem_check
+    $ num_check (`shouldBe` expected_nums)
 
+test_script ops f = uncurry f (interpret $ Script ops)
+success_with_elem_check f = success_with_env_check (f . elems)
+success_with_env_check f env error = (error `shouldBe` Nothing) >> f env
 elems = toList . stack
+num_check f elems = f (num <$> elems)
+arbitraryBN = BN <$> fromIntegral <$> (arbitrary :: Gen Int)
 
-unary_arithmetic op f = property $ forAll arbitraryIntScriptOp $ \x_op ->
-  success_with_elem_check [x_op, op] $ \elems -> case scriptOpToInt x_op of
-    Right x -> num <$> elems `shouldBe` [fromIntegral $ f x]
-    _       -> pure ()
+arbitraryPushOp =
+  oneof [opPushData <$> bin <$> arbitraryBN, arbitraryIntScriptOp]
 
-binary_arithmetic op f = property $ forAll arbitraryIntScriptOp $ \a_op ->
-  forAll arbitraryIntScriptOp $ \b_op ->
-    success_with_elem_check [a_op, b_op, op] $ \elems ->
-      case (scriptOpToInt a_op, scriptOpToInt b_op) of
-        (Right a, Right b) -> num <$> elems `shouldBe` [fromIntegral $ f a b]
-        _                  -> pure ()
+pushOpToBN (OP_PUSHDATA bs _) = Right $ num bs
+pushOpToBN op = either Left (Right . fromIntegral) (scriptOpToInt op)
+
+unary_arith_success op f = property $ forAll arbitraryPushOp $ \x_op ->
+  case pushOpToBN x_op of
+    Right x -> test_script [x_op, op] $ success_with_elem_check $ num_check
+      (`shouldBe` [f x])
+    _ -> pure ()
+
+binary_arith_success op f = binary_arith_test op
+  $ \a b -> success_with_elem_check $ num_check (`shouldBe` [f a b])
+
+binary_arith_test op f = property $ forAll arbitraryPushOp $ \a_op ->
+  forAll arbitraryPushOp $ \b_op -> case (pushOpToBN a_op, pushOpToBN b_op) of
+    (Right a, Right b) -> test_script [a_op, b_op, op] $ f a b
+    _                  -> pure ()
 
 test_shift op f = property $ forAll arbitraryBS $ \bs ->
-  forAll arbitraryIntScriptOp $ \n_op ->
-    success_with_elem_check [opPushData bs, n_op, op] $ \elems ->
-      case scriptOpToInt n_op of
-        Right n ->
-          elems
-            `shouldBe` [ if n >= size * 8
-                           then BS.pack (replicate size 0)
-                           else f bs n
-                       ]
-          where size = BS.length bs
-        _ -> pure ()
-
-success_with_elem_check ops f = do
-  let (env, error) = interpret (Script ops)
-  error `shouldBe` Nothing
-  f (elems env)
+  forAll arbitraryPushOp $ \n_op -> case pushOpToBN n_op of
+    Right n -> test_script [opPushData bs, n_op, op] $ if m < 0
+      then const (`shouldBe` Just InvalidNumberRange)
+      else
+        success_with_elem_check
+          $ (`shouldBe` [ if m >= size * 8
+                            then BS.pack (replicate size 0)
+                            else f bs m
+                        ]
+            )
+     where
+      size = BS.length bs
+      m    = fromIntegral n
+    _ -> pure ()
 
 ftestBS
   :: (a -> BS.ByteString)
@@ -277,12 +281,12 @@ ftestBS
   -> SpecWith (Arg Expectation)
 ftestBS f push_elems ops expected_elems =
   it ("returns " ++ show (hex <$> expected) ++ " given " ++ show_ops)
-    $          (hex <$> stack (fst $ interpret $ Script all_ops))
-    `shouldBe` Seq.fromList (hex <$> expected)
+    $ test_script (map opPushData packed ++ ops)
+    $ success_with_elem_check
+    $ \elems -> hex <$> elems `shouldBe` hex <$> expected
  where
   packed   = f <$> push_elems
   expected = f <$> expected_elems
-  all_ops  = map opPushData packed ++ ops
   showpush xs = "OP_PUSHDATA " ++ show (hex xs)
   show_ops =
     "[" ++ intercalate "," (map showpush packed ++ map show ops) ++ "]"
@@ -296,8 +300,8 @@ testPack = ftestBS (BS.pack)
 terminatesWith :: InterpreterError -> [ScriptOp] -> SpecWith (Arg Expectation)
 terminatesWith error ops =
   it ("returns " ++ show error ++ " given " ++ show ops)
-    $          snd (interpret (Script ops))
-    `shouldBe` (Just error)
+    $ test_script ops
+    $ const (`shouldBe` Just error)
 
 testNoFlags
   :: Maybe InterpreterError -> [ScriptOp] -> SpecWith (Arg Expectation)
