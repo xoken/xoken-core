@@ -161,8 +161,8 @@ spec = do
     it "performs OP_MUL on OP_1..16" $ binary_arithmetic OP_MUL (*)
     it "performs OP_DIV on OP_1..16" $ binary_arithmetic OP_DIV div
     it "performs OP_MOD on OP_1..16" $ binary_arithmetic OP_MOD mod
-    it "performs OP_LSHIFT on OP_1..16" $ binary_arithmetic OP_LSHIFT shiftL
-    it "performs OP_RSHIFT on OP_1..16" $ binary_arithmetic OP_RSHIFT shiftR
+    it "performs OP_LSHIFT on OP_1..16" $ test_shift OP_LSHIFT shiftL
+    it "performs OP_RSHIFT on OP_1..16" $ test_shift OP_RSHIFT shiftR
     testPack [[], [64]]     [OP_LSHIFT] [[]]
     testPack [[], [64]]     [OP_RSHIFT] [[]]
     testPack [[1], [64]]    [OP_LSHIFT] [[0]]
@@ -250,6 +250,19 @@ binary_arithmetic op f = property $ forAll arbitraryIntScriptOp $ \a_op ->
       case (scriptOpToInt a_op, scriptOpToInt b_op) of
         (Right a, Right b) -> num <$> elems `shouldBe` [fromIntegral $ f a b]
         _                  -> pure ()
+
+test_shift op f = property $ forAll arbitraryBS $ \bs ->
+  forAll arbitraryIntScriptOp $ \n_op ->
+    success_with_elem_check [opPushData bs, n_op, op] $ \elems ->
+      case scriptOpToInt n_op of
+        Right n ->
+          elems
+            `shouldBe` [ if n >= size * 8
+                           then BS.pack (replicate size 0)
+                           else f bs n
+                       ]
+          where size = BS.length bs
+        _ -> pure ()
 
 success_with_elem_check ops f = do
   let (env, error) = interpret (Script ops)
