@@ -32,6 +32,8 @@ import           Network.Xoken.Transaction.Common
 import           Network.Xoken.Crypto.Hash
 import           Network.Xoken.Crypto.Signature
 
+-- uses reversed MPI without length
+-- MPI is 4B length and big endian number with most significant bit for sign
 class BigNum a where
    bin2num :: BS.ByteString -> a
    num2bin :: a -> BS.ByteString
@@ -43,25 +45,22 @@ newtype BN = BN Integer
 
 instance BigNum BN where
 
-  bin2num bytes = case BS.uncons bytes of
-    Just (byte, rest)
-      | byte .&. 0x80 /= 0 -> -roll (BS.cons (byte .&. 0x7f) rest)
+  bin2num bytes = case BS.unsnoc bytes of
+    Just (rest, byte)
+      | byte .&. 0x80 /= 0 -> -roll (BS.snoc rest (byte .&. 0x7f))
       | otherwise          -> roll bytes
     _ -> 0
 
-  num2bin n = BS.pack $ add_sign sign_bit bytes   where
-    bytes    = unroll $ abs n
-    sign_bit = if n < 0 then 0x80 else 0
+  num2bin n = BS.pack $ add_sign (n < 0) (unroll $ abs n)
 
   num2binpad n s = case length bytes `compare` size of
     LT -> go $ replicate (size - length bytes) 0 ++ bytes
     EQ -> go bytes
     GT -> Nothing
    where
-    size     = fromIntegral s
-    bytes    = unroll $ abs n
-    go       = Just . BS.pack . add_sign sign_bit
-    sign_bit = if n < 0 then 0x80 else 0
+    size  = fromIntegral s
+    bytes = unroll $ abs n
+    go    = Just . BS.pack . add_sign (n < 0)
 
   num2u32 n
     | n >= 0 && n <= fromIntegral (maxBound :: Int) = Just $ fromIntegral n
@@ -75,10 +74,13 @@ unroll = unfoldr step where
   step 0 = Nothing
   step i = Just (fromIntegral i, i `shiftR` 8)
 
-add_sign :: Word8 -> [Word8] -> [Word8]
-add_sign sign_bit bytes@(byte : rest) | byte .&. 0x80 /= 0 = sign_bit : bytes
-                                      | otherwise = (byte .|. sign_bit) : rest
+add_sign :: Bool -> [Word8] -> [Word8]
 add_sign _ [] = []
+add_sign negative bytes | byte .&. 0x80 /= 0 = bytes ++ [sign_bit]
+                        | otherwise          = init bytes ++ [byte .|. sign_bit]
+ where
+  byte     = last bytes
+  sign_bit = if negative then 0x80 else 0
 
 type ScriptFlags = T Word ScriptFlag
 

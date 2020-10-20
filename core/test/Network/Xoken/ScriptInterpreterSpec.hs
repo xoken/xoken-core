@@ -119,12 +119,12 @@ spec = do
     it "encode 1" $ bin 1 `shouldBe` BS.pack [1]
     it "encode -1" $ bin (-1) `shouldBe` BS.pack [129]
     it "encode 256" $ bin 256 `shouldBe` BS.pack [0, 1]
-    it "encode -256" $ bin (-256) `shouldBe` BS.pack [128, 1]
+    it "encode -256" $ bin (-256) `shouldBe` BS.pack [0, 129]
     it "decode 0" $ num (BS.pack []) `shouldBe` 0
     it "decode 1" $ num (BS.pack [1]) `shouldBe` 1
     it "decode -1" $ num (BS.pack [129]) `shouldBe` -1
     it "decode 256" $ num (BS.pack [0, 1]) `shouldBe` 256
-    it "decode -256" $ num (BS.pack [128, 1]) `shouldBe` -256
+    it "decode -256" $ num (BS.pack [0, 129]) `shouldBe` -256
     terminatesWith PushSize [OP_1, OP_1NEGATE, OP_NUM2BIN]
   describe "Data manipulation" $ do
     testBS []           [OP_0, OP_0, OP_CAT] [0x0]
@@ -190,8 +190,7 @@ spec = do
             then do
               error `shouldBe` Nothing
               elems env `shouldBe` []
-            else do
-              error `shouldBe` Just NumEqualVerify
+            else error `shouldBe` Just NumEqualVerify
     it "performs OP_NUMNOTEQUAL on OP_1..16"
       $ binary_arithmetic OP_NUMNOTEQUAL (btruth (/=))
     it "performs OP_LESSTHAN on OP_1..16"
