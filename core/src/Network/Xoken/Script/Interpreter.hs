@@ -160,7 +160,7 @@ opcode OP_2ROT =
   arrange 6 (\[x1, x2, x3, x4, x5, x6] -> [x3, x4, x5, x6, x1, x2])
 opcode OP_2SWAP = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
 opcode OP_IFDUP = peek >>= \x1 -> when (num x1 /= 0) (push x1)
-opcode OP_DEPTH = stacksize >>= push . bin . BN . fromIntegral
+opcode OP_DEPTH = stacksize >>= push . int2BS
 opcode OP_DROP  = pop >> pure ()
 opcode OP_DUP   = peek >>= push
 opcode OP_NIP   = arrange 2 (\[x1, x2] -> [x2])
@@ -274,7 +274,7 @@ opcode OP_NOP9  = nop
 opcode OP_NOP10 = nop
 
 pushint :: Int -> Cmd ()
-pushint = push . bin . BN . fromIntegral
+pushint = push . int2BS
 
 pushn :: [Elem] -> Cmd ()
 pushn = sequence_ . map push

@@ -74,21 +74,56 @@ spec = do
     testPack [] [OP_PUSHDATA opdata2_xs OPDATA2] [BS.unpack opdata2_xs]
     terminatesWith MinimalData [OP_PUSHDATA opdata2_xs OPDATA4]
   describe "stack" $ do
-    test []                          []
-    test [OP_1]                      [1]
-    test [OP_1, OP_2]                [1, 2]
-    test [OP_1, OP_DROP]             []
-    test [OP_1, OP_DUP]              [1, 1]
-    test [OP_1, OP_2, OP_NIP]        [2]
-    test [OP_1, OP_2, OP_OVER]       [1, 2, 1]
-    test [OP_1, OP_0, OP_PICK]       [1, 1]
-    test [OP_1, OP_2, OP_1, OP_PICK] [1, 2, 1]
-    test [OP_1, OP_0, OP_ROLL]       [1]
-    test [OP_1, OP_2, OP_1, OP_ROLL] [2, 1]
-    terminatesWith InvalidAltstackOperation [OP_FROMALTSTACK]
-    test [OP_1, OP_TOALTSTACK, OP_FROMALTSTACK]       [1]
-    test [OP_1, OP_TOALTSTACK, OP_2, OP_FROMALTSTACK] [2, 1]
-    terminatesWith StackUnderflow [OP_DROP]
+    it "performs OP_TOALTSTACK on arbitrary data"
+      $ property
+      $ forAll (listOf arbitraryBS)
+      $ \elems -> forAll (listOf arbitraryBS) $ \alt_elems ->
+          forAll arbitraryBS $ \bs ->
+            test_script_with
+                ( stack_equal (Seq.fromList $ elems ++ [bs])
+                . alt_stack_equal (Seq.fromList alt_elems)
+                )
+                [opPushData bs, OP_TOALTSTACK]
+              $ success_with_alt_elem_check
+              $ (`shouldBe` bs : alt_elems)
+    it "performs OP_FROMALTSTACK on arbitrary data"
+      $ property
+      $ forAll (listOf arbitraryBS)
+      $ \elems -> forAll (listOf arbitraryBS) $ \alt_elems ->
+          forAll arbitraryBS $ \bs ->
+            test_script_with
+                ( stack_equal (Seq.fromList elems)
+                . alt_stack_equal (Seq.fromList $ bs : alt_elems)
+                )
+                [OP_FROMALTSTACK]
+              $ success_with_elem_check
+              $ (`shouldBe` elems ++ [bs])
+    it
+        "OP_FROMALTSTACK terminates with InvalidAltstackOperation with empty alt_stack"
+      $ property
+      $ forAll (listOf arbitraryBS)
+      $ \elems ->
+          test_script_with (stack_equal $ Seq.fromList elems) [OP_FROMALTSTACK]
+            $ const (`shouldBe` Just InvalidAltstackOperation)
+    arrange_test OP_2DROP 2 (\[a, b] -> [])
+    arrange_test OP_2DUP  2 (\[a, b] -> [a, b, a, b])
+    arrange_test OP_3DUP  3 (\[a, b, c] -> [a, b, c, a, b, c])
+    arrange_test OP_2OVER 4 (\[a, b, c, d] -> [a, b, c, d, a, b])
+    arrange_test OP_2ROT  6 (\[a, b, c, d, e, f] -> [c, d, e, f, a, b])
+    arrange_test OP_2SWAP 4 (\[a, b, c, d] -> [c, d, a, b])
+    arrange_test OP_IFDUP 1 (\[a] -> if num a /= 0 then [a, a] else [a])
+    it "performs OP_DEPTH on arbitrary data"
+      $ property
+      $ forAll (listOf arbitraryBS)
+      $ \elems ->
+          test_script_with (stack_equal $ Seq.fromList elems) [OP_DEPTH]
+            $ success_with_elem_check
+            $ (`shouldBe` elems ++ [int2BS $ length elems])
+    arrange_test OP_DROP 1 (\[a] -> [])
+    arrange_test OP_DUP  1 (\[a] -> [a, a])
+    arrange_test OP_NIP  2 (\[a, b] -> [b])
+    arrange_test OP_OVER 2 (\[a, b] -> [a, b, a])
+    arrange_test OP_SWAP 2 (\[a, b] -> [b, a])
   describe "interpreter extra" $ do
     testNoFlags Nothing [OP_NOP1]
     terminatesWith DiscourageUpgradableNOPs [OP_NOP1]
@@ -230,10 +265,24 @@ test ops expected_nums =
     $ success_with_elem_check
     $ num_check (`shouldBe` expected_nums)
 
-test_script ops f = uncurry f (interpret $ Script ops)
+arrange_test op n f =
+  it ("performs " ++ show op ++ " on arbitrary data")
+    $ property
+    $ forAll (listOf arbitraryBS)
+    $ \elems -> forAll (vectorOf n arbitraryBS) $ \bss ->
+        test_script_with (stack_equal $ Seq.fromList $ elems ++ bss) [op]
+          $ success_with_elem_check
+          $ (`shouldBe` (elems ++ f bss))
+
+test_script_with change_env ops f =
+  uncurry f (interpretWith $ change_env $ env $ Script ops)
+
+test_script = test_script_with id
 success_with_elem_check f = success_with_env_check (f . elems)
+success_with_alt_elem_check f = success_with_env_check (f . alt_elems)
 success_with_env_check f env error = (error `shouldBe` Nothing) >> f env
 elems = toList . stack
+alt_elems = toList . alt_stack
 num_check f elems = f (num <$> elems)
 arbitraryBN = BN <$> fromIntegral <$> (arbitrary :: Gen Int)
 

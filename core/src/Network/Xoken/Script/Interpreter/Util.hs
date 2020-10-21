@@ -177,3 +177,6 @@ cleanupScriptCode script sigBS sighash forkidEnabled
 
 sigHash :: Signature -> SigHash
 sigHash = toEnum . fromIntegral . BS.last
+
+int2BS :: Int -> BS.ByteString
+int2BS = num2bin . BN . fromIntegral

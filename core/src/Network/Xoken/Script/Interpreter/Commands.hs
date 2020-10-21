@@ -108,13 +108,16 @@ data Env = Env
   , op_count :: Word64
   }
 
+stack_equal x e = e { stack = x }
+alt_stack_equal x e = e { alt_stack = x }
+
 data Branch = Branch
   { satisfied :: Bool
   , is_else_branch :: Bool
   } deriving (Show, Eq)
 
 rindex :: Int -> Env -> Int
-rindex i e = length (stack e) - 1 - i
+rindex i e = length (stack e) - i
 
 truth :: Integral a => Bool -> a
 truth x = if x then 1 else 0
@@ -140,16 +143,17 @@ interpretCmd = go where
     PopNth n k -> case stack e Seq.!? i of
       Just x -> go (k x) (e { stack = Seq.deleteAt i (stack e) })
       _      -> (e, Error StackUnderflow)
-      where i = rindex (fromIntegral n) e
+      where i = rindex (fromIntegral n) e - 1
     Peek k -> case Seq.viewr (stack e) of
       _ Seq.:> x -> go (k x) e
       _          -> (e, Error StackUnderflow)
     PeekN n k | length topn == n -> go (k $ toList topn) e
               | otherwise        -> (e, Error StackUnderflow)
       where topn = Seq.drop (rindex n e) (stack e)
-    PeekNth n k -> case stack e Seq.!? rindex (fromIntegral n) e of
+    PeekNth n k -> case stack e Seq.!? i of
       Just x -> go (k x) e
       _      -> (e, Error StackUnderflow)
+      where i = rindex (fromIntegral n) e - 1
     StackSize k -> go (k $ length $ stack e) e
     -- alt stack
     PushAlt x m -> go m (e { alt_stack = x Seq.<| alt_stack e })
@@ -185,7 +189,7 @@ interpretCmd = go where
     ScriptEndToHash k -> go (k $ script_end_to_hash e) e
     Consensus       k -> go (k $ is_consensus e) e
     OpCount         k -> go (k $ op_count e) e
-    AddToOpCount x m -> if opcount' > maxOpsPerScript genesis c
+    AddToOpCount x m  -> if opcount' > maxOpsPerScript genesis c
       then (e { op_count = opcount' }, Error InvalidOpCount)
       else go m (e { op_count = opcount' })
      where
