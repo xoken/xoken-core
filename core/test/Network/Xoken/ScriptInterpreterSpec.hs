@@ -3,9 +3,6 @@ module Network.Xoken.ScriptInterpreterSpec
   )
 where
 
-import           Data.Bits                      ( shiftL
-                                                , shiftR
-                                                )
 import           Data.Foldable                  ( toList )
 import           Data.List                      ( intercalate )
 import           Data.Word                      ( Word8
@@ -18,6 +15,7 @@ import           Data.EnumBitSet                ( fromEnums
 import           Data.ByteString.Builder        ( toLazyByteString
                                                 , byteStringHex
                                                 )
+import qualified Data.Bits                     as B
 import qualified Data.ByteString               as BS
 import qualified Data.Sequence                 as Seq
 import           Test.Hspec
@@ -222,13 +220,23 @@ spec = do
     arrange_test OP_BIN2NUM 1 (\[a] -> [bin $ num $ a])
     arrange_test OP_SIZE    1 (\[a] -> [a, int2BS $ BS.length a])
   describe "Bitwise logic" $ do
-    testBS [0x1234]     [OP_INVERT] [0xEDCB]
-    testBS [0x12, 0x34] [OP_AND]    [0x10]
-    testBS [0x12, 0x34] [OP_OR]     [0x36]
-    testBS [0x12, 0x34] [OP_XOR]    [0x26]
-    test [OP_1, OP_1, OP_EQUAL] [1]
-    test [OP_1, OP_2, OP_EQUAL] [0]
-    terminatesWith InvalidOperandSize [OP_0, OP_1, OP_AND]
+    arrange_test OP_INVERT 1 (\[a] -> [B.complement a])
+    binary_bitwise_test OP_AND (B..&.)
+    binary_bitwise_test OP_OR  (B..|.)
+    binary_bitwise_test OP_XOR (B.xor)
+    n_bs_test
+      OP_EQUAL
+      2
+      (\elems [a, b] ->
+        success_with_elem_check (`shouldBe` elems ++ [bin $ truth $ a == b])
+      )
+    n_bs_test
+      OP_EQUALVERIFY
+      2
+      (\elems [a, b] -> if a == b
+        then success_with_elem_check (`shouldBe` elems)
+        else const (`shouldBe` Just EqualVerify)
+      )
   describe "Arithmetic" $ do
     it "performs OP_1ADD on arbitrary data" $ unary_arith_success OP_1ADD succ
     it "performs OP_1SUB on arbitrary data" $ unary_arith_success OP_1SUB pred
@@ -250,8 +258,8 @@ spec = do
       if b == 0
         then const (`shouldBe` Just ModByZero)
         else success_with_elem_check $ num_check (`shouldBe` [a `mod` b])
-    it "performs OP_LSHIFT on arbitrary data" $ test_shift OP_LSHIFT shiftL
-    it "performs OP_RSHIFT on arbitrary data" $ test_shift OP_RSHIFT shiftR
+    it "performs OP_LSHIFT on arbitrary data" $ test_shift OP_LSHIFT B.shiftL
+    it "performs OP_RSHIFT on arbitrary data" $ test_shift OP_RSHIFT B.shiftR
     it "performs OP_BOOLAND on arbitrary data"
       $ binary_arith_success OP_BOOLAND (\a b -> truth (a /= 0 && b /= 0))
     it "performs OP_BOOLOR on arbitrary data"
@@ -306,14 +314,17 @@ test ops expected_nums =
     $ success_with_elem_check
     $ num_check (`shouldBe` expected_nums)
 
-arrange_test op n f =
+arrange_test op n f = n_bs_test op n
+  $ \elems bss -> success_with_elem_check (`shouldBe` elems ++ f bss)
+
+n_bs_test op n f =
   it ("performs " ++ show op ++ " on arbitrary data")
     $ property
     $ forAll (listOf arbitraryBS)
-    $ \elems -> forAll (vectorOf n arbitraryBS) $ \bss ->
-        test_script_with (stack_equal $ Seq.fromList $ elems ++ bss) [op]
-          $ success_with_elem_check
-          $ (`shouldBe` elems ++ f bss)
+    $ \elems -> forAll (vectorOf n arbitraryBS) $ \bss -> test_script_with
+        (stack_equal $ Seq.fromList $ elems ++ bss)
+        [op]
+        (f elems bss)
 
 test_script_with change_env ops f =
   uncurry f (interpretWith $ change_env $ env $ Script ops)
@@ -338,6 +349,11 @@ unary_arith_success op f = property $ forAll arbitraryPushOp $ \x_op ->
     Right x -> test_script [x_op, op] $ success_with_elem_check $ num_check
       (`shouldBe` [f x])
     _ -> pure ()
+
+binary_bitwise_test op f = n_bs_test op 2 $ \elems [a, b] ->
+  if BS.length a == BS.length b
+    then success_with_elem_check (`shouldBe` elems ++ [f a b])
+    else const (`shouldBe` Just InvalidOperandSize)
 
 binary_arith_success op f = binary_arith_test op
   $ \a b -> success_with_elem_check $ num_check (`shouldBe` [f a b])
