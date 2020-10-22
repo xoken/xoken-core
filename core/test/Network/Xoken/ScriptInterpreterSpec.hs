@@ -13,6 +13,7 @@ import           Data.Word                      ( Word8
                                                 )
 import           Data.EnumBitSet                ( fromEnums
                                                 , (.|.)
+                                                , get
                                                 )
 import           Data.ByteString.Builder        ( toLazyByteString
                                                 , byteStringHex
@@ -182,7 +183,6 @@ spec = do
     it "decode -256" $ num (BS.pack [0, 129]) `shouldBe` -256
     terminatesWith PushSize [OP_1, OP_1NEGATE, OP_NUM2BIN]
   describe "Data manipulation" $ do
-    testPack [] [OP_0, OP_0, OP_CAT] [[]]
     it "performs OP_CAT on arbitrary data"
       $ property
       $ forAll arbitraryBS
@@ -200,6 +200,27 @@ spec = do
                   else success_with_elem_check (`shouldBe` [bs1, bs2])
             where (bs1, bs2) = BS.splitAt n bs
           _ -> pure ()
+    it "performs OP_NUM2BIN on arbitrary data"
+      $ property
+      $ forAll arbitraryBS
+      $ \bnBS -> forAll arbitraryBS $ \sizeBS ->
+          test_script_with (stack_equal $ Seq.fromList [bnBS, sizeBS])
+                           [OP_NUM2BIN]
+            $ \env error -> do
+                let
+                  [bn, size] = map num [bnBS, sizeBS]
+                  genesis    = get UTXO_AFTER_GENESIS (script_flags env)
+                  tooBig =
+                    not genesis
+                      && size
+                      >  fromIntegral maxScriptElementSizeBeforeGenesis
+                if size < 0 || size > fromIntegral (maxBound :: Int) || tooBig
+                  then error `shouldBe` Just PushSize
+                  else case num2binpad bn (fromIntegral size) of
+                    Just x -> pure () -- elems env `shouldBe` [x]
+                    _      -> error `shouldBe` Just ImpossibleEncoding
+    arrange_test OP_BIN2NUM 1 (\[a] -> [bin $ num $ a])
+    arrange_test OP_SIZE    1 (\[a] -> [a, int2BS $ BS.length a])
   describe "Bitwise logic" $ do
     testBS [0x1234]     [OP_INVERT] [0xEDCB]
     testBS [0x12, 0x34] [OP_AND]    [0x10]
