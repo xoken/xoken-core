@@ -8,7 +8,9 @@ import           Data.Bits                      ( shiftL
                                                 )
 import           Data.Foldable                  ( toList )
 import           Data.List                      ( intercalate )
-import           Data.Word                      ( Word8 )
+import           Data.Word                      ( Word8
+                                                , Word32
+                                                )
 import           Data.EnumBitSet                ( fromEnums
                                                 , (.|.)
                                                 )
@@ -83,28 +85,21 @@ spec = do
                 ( stack_equal (Seq.fromList $ elems ++ [bs])
                 . alt_stack_equal (Seq.fromList alt_elems)
                 )
-                [opPushData bs, OP_TOALTSTACK]
+                [OP_TOALTSTACK]
               $ success_with_alt_elem_check
               $ (`shouldBe` bs : alt_elems)
     it "performs OP_FROMALTSTACK on arbitrary data"
       $ property
       $ forAll (listOf arbitraryBS)
       $ \elems -> forAll (listOf arbitraryBS) $ \alt_elems ->
-          forAll arbitraryBS $ \bs ->
-            test_script_with
-                ( stack_equal (Seq.fromList elems)
-                . alt_stack_equal (Seq.fromList $ bs : alt_elems)
-                )
-                [OP_FROMALTSTACK]
-              $ success_with_elem_check
-              $ (`shouldBe` elems ++ [bs])
-    it
-        "OP_FROMALTSTACK terminates with InvalidAltstackOperation with empty alt_stack"
-      $ property
-      $ forAll (listOf arbitraryBS)
-      $ \elems ->
-          test_script_with (stack_equal $ Seq.fromList elems) [OP_FROMALTSTACK]
-            $ const (`shouldBe` Just InvalidAltstackOperation)
+          test_script_with
+              ( stack_equal (Seq.fromList elems)
+              . alt_stack_equal (Seq.fromList $ alt_elems)
+              )
+              [OP_FROMALTSTACK]
+            $ case alt_elems of
+                x : _ -> success_with_elem_check (`shouldBe` elems ++ [x])
+                _     -> const (`shouldBe` Just InvalidAltstackOperation)
     arrange_test OP_2DROP 2 (\[a, b] -> [])
     arrange_test OP_2DUP  2 (\[a, b] -> [a, b, a, b])
     arrange_test OP_3DUP  3 (\[a, b, c] -> [a, b, c, a, b, c])
@@ -123,7 +118,32 @@ spec = do
     arrange_test OP_DUP  1 (\[a] -> [a, a])
     arrange_test OP_NIP  2 (\[a, b] -> [b])
     arrange_test OP_OVER 2 (\[a, b] -> [a, b, a])
+    it "performs OP_PICK on arbitrary data"
+      $ property
+      $ forAll (listOf arbitraryBS)
+      $ \elems -> forAll (arbitrary :: Gen Word32) $ \i -> do
+          let n = fromIntegral i
+          test_script_with (stack_equal $ Seq.fromList elems)
+                           [opPushData (int2BS n), OP_PICK]
+            $ if n < length elems
+                then success_with_elem_check
+                  (`shouldBe` elems ++ [elems !! (length elems - 1 - n)])
+                else const (`shouldBe` Just StackUnderflow)
+    it "performs OP_ROLL on arbitrary data"
+      $ property
+      $ forAll (listOf arbitraryBS)
+      $ \xs -> forAll (arbitrary :: Gen Word32) $ \i -> do
+          let n = fromIntegral i
+          test_script_with (stack_equal $ Seq.fromList xs)
+                           [opPushData (int2BS n), OP_ROLL]
+            $ if n < length xs
+                then do
+                  let (before, x : after) = splitAt (length xs - 1 - n) xs
+                  success_with_elem_check (`shouldBe` before ++ after ++ [x])
+                else const (`shouldBe` Just StackUnderflow)
+    arrange_test OP_ROT  3 (\[a, b, c] -> [b, c, a])
     arrange_test OP_SWAP 2 (\[a, b] -> [b, a])
+    arrange_test OP_TUCK 2 (\[a, b] -> [b, a, b])
   describe "interpreter extra" $ do
     testNoFlags Nothing [OP_NOP1]
     terminatesWith DiscourageUpgradableNOPs [OP_NOP1]
@@ -272,7 +292,7 @@ arrange_test op n f =
     $ \elems -> forAll (vectorOf n arbitraryBS) $ \bss ->
         test_script_with (stack_equal $ Seq.fromList $ elems ++ bss) [op]
           $ success_with_elem_check
-          $ (`shouldBe` (elems ++ f bss))
+          $ (`shouldBe` elems ++ f bss)
 
 test_script_with change_env ops f =
   uncurry f (interpretWith $ change_env $ env $ Script ops)
@@ -308,18 +328,16 @@ binary_arith_test op f = property $ forAll arbitraryPushOp $ \a_op ->
 
 test_shift op f = property $ forAll arbitraryBS $ \bs ->
   forAll arbitraryPushOp $ \n_op -> case pushOpToBN n_op of
-    Right n -> test_script [opPushData bs, n_op, op] $ if m < 0
+    Right n -> test_script [opPushData bs, n_op, op] $ if n < 0
       then const (`shouldBe` Just InvalidNumberRange)
       else
         success_with_elem_check
-          $ (`shouldBe` [ if m >= size * 8
+          $ (`shouldBe` [ if fromIntegral n >= size * 8
                             then BS.pack (replicate size 0)
-                            else f bs m
+                            else f bs (fromIntegral n)
                         ]
             )
-     where
-      size = BS.length bs
-      m    = fromIntegral n
+      where size = BS.length bs
     _ -> pure ()
 
 ftestBS
