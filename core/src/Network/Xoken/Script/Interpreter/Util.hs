@@ -38,7 +38,6 @@ class BigNum a where
    bin2num :: BS.ByteString -> a
    num2bin :: a -> BS.ByteString
    num2binpad :: a -> Word32 -> Maybe BS.ByteString
-   num2u32 :: a -> Maybe Word32
 
 newtype BN = BN Integer
    deriving (Eq, Ord, Enum, Num, Real, Integral, Bits, Show)
@@ -61,10 +60,6 @@ instance BigNum BN where
     size  = fromIntegral s
     bytes = unroll $ abs n
     go    = Just . BS.pack . add_sign (n < 0)
-
-  num2u32 n
-    | n >= 0 && n <= fromIntegral (maxBound :: Int) = Just $ fromIntegral n
-    | True = Nothing
 
 roll :: (Integral a, Bits a) => BS.ByteString -> a
 roll = BS.foldr unstep 0 where unstep b a = a `shiftL` 8 .|. fromIntegral b
@@ -180,3 +175,10 @@ sigHash = toEnum . fromIntegral . BS.last
 
 int2BS :: Integral a => a -> BS.ByteString
 int2BS = num2bin . BN . fromIntegral
+
+isMinimallyEncoded :: BS.ByteString -> Int -> Bool
+isMinimallyEncoded bs max_size =
+  size <= max_size && case BS.unpack $ BS.drop (size - 2) bs of
+    [before_last, last] -> last .&. 0x7f /= 0 || before_last .&. 0x80 /= 0
+    _                   -> True
+  where size = BS.length bs

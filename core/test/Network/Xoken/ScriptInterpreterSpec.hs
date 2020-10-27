@@ -169,17 +169,13 @@ spec = do
     terminatesWith MinimalIf             [OP_2, OP_IF, OP_ENDIF]
     terminatesWith MinimalIf             [opPushData (BS.pack [1, 2]), OP_IF]
   describe "BN conversion" $ do
-    it "encode 0" $ bin 0 `shouldBe` BS.pack []
-    it "encode 1" $ bin 1 `shouldBe` BS.pack [1]
-    it "encode -1" $ bin (-1) `shouldBe` BS.pack [129]
-    it "encode 256" $ bin 256 `shouldBe` BS.pack [0, 1]
-    it "encode -256" $ bin (-256) `shouldBe` BS.pack [0, 129]
-    it "decode 0" $ num (BS.pack []) `shouldBe` 0
-    it "decode 1" $ num (BS.pack [1]) `shouldBe` 1
-    it "decode -1" $ num (BS.pack [129]) `shouldBe` -1
-    it "decode 256" $ num (BS.pack [0, 1]) `shouldBe` 256
-    it "decode -256" $ num (BS.pack [0, 129]) `shouldBe` -256
-    terminatesWith PushSize [OP_1, OP_1NEGATE, OP_NUM2BIN]
+    bn_conversion 0      []
+    bn_conversion 1      [1]
+    bn_conversion (-1)   [129]
+    bn_conversion 255    [255, 0]
+    bn_conversion (-255) [255, 128]
+    bn_conversion 256    [0, 1]
+    bn_conversion (-256) [0, 129]
   describe "Data manipulation" $ do
     it "performs OP_CAT on arbitrary data"
       $ property
@@ -328,6 +324,10 @@ n_bs_test op n f =
 
 test_script_with change_env ops f =
   uncurry f (interpretWith $ change_env $ env $ Script ops)
+
+bn_conversion n xs = it ("converts BN " ++ show n) $ do
+  bin n `shouldBe` BS.pack xs
+  num (BS.pack xs) `shouldBe` n
 
 test_script = test_script_with id
 success_with_elem_check f = success_with_env_check (f . elems)

@@ -176,9 +176,9 @@ interpretCmd = go where
         )
       _ -> (e, Error UnbalancedConditional)
     -- num
-    Num2u32 n k -> case num2u32 n of
-      Just u -> go (k u) e
-      _      -> (e, Error InvalidNumberRange)
+    Num2u32 n k -> if n >= 0 && n <= fromIntegral (maxBound :: Word32)
+      then go (k $ fromIntegral n) e
+      else (e, Error InvalidNumberRange)
     LimitedNum n x k -> if BS.length x <= n
       then go (k $ (bin2num x :: BN)) e
       else (e, Error NumOverflow)

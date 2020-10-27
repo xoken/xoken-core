@@ -336,7 +336,7 @@ shift f = popn 2 >>= \[x1, x2] -> do
       then push (BS.replicate (BS.length x1) 0)
       else go x1 n
  where
-  go x n | n <= max  = bn2u32 n >>= push . f x . fromIntegral
+  go x n | n <= max  = push $ f x $ fromIntegral n
          | otherwise = go (f x maxInt) (n - max)
   maxInt = maxBound :: Int
   max    = fromIntegral maxInt
