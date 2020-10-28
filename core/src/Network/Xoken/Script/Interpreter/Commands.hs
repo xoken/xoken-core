@@ -65,6 +65,7 @@ data InterpreterCommand a
     | Consensus (Bool -> a)
     | OpCount (Word64 -> a)
     | AddToOpCount Word64 a
+    | MaxNumLength (Int -> a)
     deriving (Functor)
 
 type Cmd = Free InterpreterCommand
@@ -209,6 +210,7 @@ interpretCmd = go where
       then (e { op_count = opcount' }, Error InvalidOpCount)
       else go m (e { op_count = opcount' })
       where opcount' = op_count e + x
+    MaxNumLength k -> go (k maxNumLength) e
    where
     c = is_consensus e
     flag x = get x (script_flags e)
@@ -299,3 +301,6 @@ opcount = liftF (OpCount id)
 
 addtoopcount :: Word64 -> Cmd ()
 addtoopcount x = liftF (AddToOpCount x ())
+
+maxnumlength :: Cmd Int
+maxnumlength = liftF (MaxNumLength id)

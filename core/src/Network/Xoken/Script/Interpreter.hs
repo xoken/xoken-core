@@ -160,8 +160,8 @@ opcode OP_DROP  = pop >> pure ()
 opcode OP_DUP   = peek >>= push
 opcode OP_NIP   = arrange 2 (\[x1, x2] -> [x2])
 opcode OP_OVER  = arrangepeek 2 (\[x1, x2] -> [x1])
-opcode OP_PICK  = pop >>= bn2u32 . num >>= peeknth >>= push
-opcode OP_ROLL  = pop >>= bn2u32 . num >>= popnth >>= push
+opcode OP_PICK  = pop >>= num' >>= bn2u32 >>= peeknth >>= push
+opcode OP_ROLL  = pop >>= num' >>= bn2u32 >>= popnth >>= push
 opcode OP_ROT   = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
 opcode OP_SWAP  = arrange 2 (\[x1, x2] -> [x2, x1])
 opcode OP_TUCK  = arrange 2 (\[x1, x2] -> [x2, x1, x2])
@@ -171,7 +171,7 @@ opcode OP_CAT   = popn 2 >>= \[x1, x2] ->
     True -> terminate PushSize
     _    -> push (BS.append x1 x2)
 opcode OP_SPLIT = popn 2 >>= \[x1, x2] -> do
-  let n = num x2
+  n <- num' x2
   if n < 0 || n > fromIntegral (BS.length x1)
     then terminate InvalidSplitRange
     else let (y1, y2) = BS.splitAt (fromIntegral n) x1 in pushn [y1, y2]
@@ -182,14 +182,19 @@ opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] ->
       else maybe (terminate ImpossibleEncoding)
                  push
                  (num2binpad x1 (fromIntegral x2))
-opcode OP_BIN2NUM = pop >>= push . bin . num
-opcode OP_SIZE    = peek >>= pushint . BS.length
+opcode OP_BIN2NUM = pop >>= \x -> do
+  maxNumLength <- maxnumlength
+  let bs = bin (bin2num x)
+  if isMinimallyEncoded bs maxNumLength
+    then push bs
+    else terminate InvalidNumberRange
+opcode OP_SIZE   = peek >>= pushint . BS.length
 -- Bitwise logic
-opcode OP_INVERT  = unary (BS.map complement)
-opcode OP_AND     = binarybitwise (.&.)
-opcode OP_OR      = binarybitwise (.|.)
-opcode OP_XOR     = binarybitwise xor
-opcode OP_EQUAL   = popn 2 >>= push . bin . \[x1, x2] -> truth $ x1 == x2
+opcode OP_INVERT = unary (BS.map complement)
+opcode OP_AND    = binarybitwise (.&.)
+opcode OP_OR     = binarybitwise (.|.)
+opcode OP_XOR    = binarybitwise xor
+opcode OP_EQUAL  = popn 2 >>= push . bin . \[x1, x2] -> truth $ x1 == x2
 opcode OP_EQUALVERIFY =
   popn 2 >>= \[x1, x2] -> when (x1 /= x2) (terminate EqualVerify)
 -- Arithmetic
@@ -313,15 +318,12 @@ binarybitwise f = popn 2 >>= \[x1, x2] -> if BS.length x1 == BS.length x2
 btruth :: (a1 -> a2 -> Bool) -> a1 -> a2 -> BN
 btruth = ((truth .) .)
 
-num :: Elem -> BN
-num = bin2num
-
 bin :: BN -> Elem
 bin = num2bin
 
 shift :: (Elem -> Int -> Elem) -> Cmd ()
 shift f = popn 2 >>= \[x1, x2] -> do
-  let n = num x2
+  n <- num' x2
   if n < 0
     then terminate InvalidNumberRange
     else if n >= fromIntegral (BS.length x1) * 8
@@ -382,22 +384,22 @@ singlesig finalize check sigBS pubKeyBS verifynull =
 
 checkmultisig :: (Bool -> Cmd ()) -> Cmd ()
 checkmultisig finalize = do
-  c       <- consensus
-  fs      <- flags
-  impl    <- checker
-  script  <- scriptendtohash
-  opCount <- opcount
-  nKeysBN <- pop
-  let nKeysCountSigned = fromIntegral (num nKeysBN) :: Int
-      nKeysCount       = fromIntegral nKeysCountSigned :: Word64
-      genesis          = get UTXO_AFTER_GENESIS fs
+  c                <- consensus
+  fs               <- flags
+  impl             <- checker
+  script           <- scriptendtohash
+  opCount          <- opcount
+  nKeysBN          <- pop
+  nKeysCountSigned <- fromIntegral <$> num' nKeysBN
+  let nKeysCount = fromIntegral nKeysCountSigned :: Word64
+      genesis    = get UTXO_AFTER_GENESIS fs
   when (nKeysCountSigned < 0 || nKeysCount > maxPubKeysPerMultiSig genesis c)
        (terminate PubKeyCount)
   addtoopcount nKeysCount
-  keys    <- popn nKeysCountSigned
-  nSigsBN <- pop
-  let nSigsCountSigned = fromIntegral (num nSigsBN) :: Int
-      nSigsCount       = fromIntegral nSigsCountSigned :: Word64
+  keys             <- popn nKeysCountSigned
+  nSigsBN          <- pop
+  nSigsCountSigned <- fromIntegral <$> num' nSigsBN
+  let nSigsCount = fromIntegral nSigsCountSigned :: Word64
   when (nSigsCountSigned < 0 || nSigsCount > nKeysCount) (terminate SigCount)
   sigs <- popn nSigsCountSigned
   let forkid = get ENABLE_SIGHASH_FORKID fs

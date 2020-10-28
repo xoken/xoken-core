@@ -302,6 +302,9 @@ spec = do
       [OP_HASH256]
       [0xA23421F2BA909C885A3077BB6F8EB4312487797693BBCFE7E311F797E3C5B8FA]
 
+num :: Elem -> BN
+num = bin2num
+
 test :: [ScriptOp] -> [BN] -> SpecWith (Arg Expectation)
 test ops expected_nums =
   it ("returns " ++ show expected_nums ++ " given " ++ show ops)
