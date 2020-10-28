@@ -364,6 +364,7 @@ checksig finalize = popn 2 >>= \[sigBS, pubKeyBS] -> do
   fs     <- flags
   script <- scriptendtohash
   c      <- checker
+  checkPubKeyEncoding fs pubKeyBS
   let
     forkid  = get ENABLE_SIGHASH_FORKID fs
     sighash = sigHash sigBS
@@ -396,7 +397,8 @@ checkmultisig finalize = do
   when (nKeysCountSigned < 0 || nKeysCount > maxPubKeysPerMultiSig genesis c)
        (terminate PubKeyCount)
   addtoopcount nKeysCount
-  keys             <- popn nKeysCountSigned
+  keys <- popn nKeysCountSigned
+  mapM (checkPubKeyEncoding fs) keys
   nSigsBN          <- pop
   nSigsCountSigned <- fromIntegral <$> num' nSigsBN
   let nSigsCount = fromIntegral nSigsCountSigned :: Word64
@@ -426,3 +428,18 @@ verify error x = when (not x) (terminate error)
 
 pushbool :: Bool -> Cmd ()
 pushbool = push . bin . truth
+
+checkPubKeyEncoding :: ScriptFlags -> BS.ByteString -> Cmd ()
+checkPubKeyEncoding fs pubKeyBS = do
+  when (get VERIFY_STRICTENC fs && not isCompressedOrUncompressedPubKey)
+       (terminate PubKeyType)
+  when (get VERIFY_COMPRESSED_PUBKEYTYPE fs && not isCompressedPubKey)
+       (terminate NonCompressedPubKey)
+ where
+  isCompressedOrUncompressedPubKey | size < 33                = False
+                                   | head == 0x04             = size == 65
+                                   | head `elem` [0x02, 0x03] = size == 33
+                                   | otherwise                = False
+  isCompressedPubKey = size == 33 && head `elem` [0x02, 0x03]
+  size               = BS.length pubKeyBS
+  head               = BS.unpack pubKeyBS !! 0

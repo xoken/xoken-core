@@ -100,6 +100,8 @@ data InterpreterError
   | SigNullDummy
   | InvalidSigOrPubKey
   | PubKeyCount
+  | PubKeyType
+  | NonCompressedPubKey
   | SigCount
   | InvalidOpCount
   | NonMinimalNum
