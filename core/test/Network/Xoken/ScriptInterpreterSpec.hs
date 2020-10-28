@@ -177,12 +177,8 @@ spec = do
     bn_conversion 256    [0, 1]
     bn_conversion (-256) [0, 129]
   describe "Data manipulation" $ do
-    it "performs OP_CAT on arbitrary data"
-      $ property
-      $ forAll arbitraryBS
-      $ \bs1 -> forAll arbitraryBS $ \bs2 ->
-          test_script [opPushData bs1, opPushData bs2, OP_CAT]
-            $ success_with_elem_check (`shouldBe` [BS.append bs1 bs2])
+    n_bs_test OP_CAT 2 $ \elems [bs1, bs2] ->
+      success_with_elem_check (`shouldBe` elems ++ [BS.append bs1 bs2])
     it "performs OP_SPLIT on arbitrary data"
       $ property
       $ forAll arbitraryBS
@@ -319,17 +315,28 @@ n_bs_test op n f =
   it ("performs " ++ show op ++ " on arbitrary data")
     $ property
     $ forAll (listOf arbitraryBS)
-    $ \elems -> forAll (vectorOf n arbitraryBS) $ \bss -> test_script_with
-        (stack_equal $ Seq.fromList $ elems ++ bss)
+    $ \elems -> test_script_with
+        (stack_equal $ Seq.fromList $ elems)
         [op]
-        (f elems bss)
+        (if length elems < n
+          then const (`shouldBe` Just StackUnderflow)
+          else uncurry f (splitAt (length elems - n) elems)
+        )
 
 test_script_with change_env ops f =
   uncurry f (interpretWith $ change_env $ env $ Script ops)
 
-bn_conversion n xs = it ("converts BN " ++ show n) $ do
-  bin n `shouldBe` BS.pack xs
-  num (BS.pack xs) `shouldBe` n
+bn_conversion :: BN -> [Word8] -> SpecWith (Arg Expectation)
+bn_conversion n xs = do
+  it ("converts BN " ++ show n) $ do
+    bin n `shouldBe` BS.pack xs
+    num (BS.pack xs) `shouldBe` n
+  it ("converts limited BN" ++ show n)
+    $ property
+    $ forAll arbitrary
+    $ \max_size -> forAll arbitrary $ \require_minimal ->
+        bin2num' require_minimal max_size (BS.pack xs)
+          `shouldBe` if max_size < length xs then Nothing else Just n
 
 test_script = test_script_with id
 success_with_elem_check f = success_with_env_check (f . elems)
@@ -338,7 +345,7 @@ success_with_env_check f env error = (error `shouldBe` Nothing) >> f env
 elems = toList . stack
 alt_elems = toList . alt_stack
 num_check f elems = f (num <$> elems)
-arbitraryBN = BN <$> fromIntegral <$> (arbitrary :: Gen Int)
+arbitraryBN = BN <$> arbitrary
 
 arbitraryPushOp =
   oneof [opPushData <$> bin <$> arbitraryBN, arbitraryIntScriptOp]
@@ -387,7 +394,7 @@ ftestBS
   -> SpecWith (Arg Expectation)
 ftestBS f push_elems ops expected_elems =
   it ("returns " ++ show (hex <$> expected) ++ " given " ++ show_ops)
-    $ test_script (map opPushData packed ++ ops)
+    $ test_script_with (stack_equal $ Seq.fromList packed) ops
     $ success_with_elem_check
     $ \elems -> hex <$> elems `shouldBe` hex <$> expected
  where
@@ -401,7 +408,7 @@ testBS :: [Integer] -> [ScriptOp] -> [Integer] -> SpecWith (Arg Expectation)
 testBS = ftestBS rawNumToBS
 
 testPack :: [[Word8]] -> [ScriptOp] -> [[Word8]] -> SpecWith (Arg Expectation)
-testPack = ftestBS (BS.pack)
+testPack = ftestBS BS.pack
 
 terminatesWith :: InterpreterError -> [ScriptOp] -> SpecWith (Arg Expectation)
 terminatesWith error ops =
