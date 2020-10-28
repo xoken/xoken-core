@@ -36,6 +36,7 @@ import           Network.Xoken.Crypto.Signature
 -- MPI is 4B length and big endian number with most significant bit for sign
 class BigNum a where
    bin2num :: BS.ByteString -> a
+   bin2num' :: Bool -> Int -> BS.ByteString -> Maybe a
    num2bin :: a -> BS.ByteString
    num2binpad :: a -> Word32 -> Maybe BS.ByteString
 
@@ -49,6 +50,14 @@ instance BigNum BN where
       | byte .&. 0x80 /= 0 -> -roll (BS.snoc rest (byte .&. 0x7f))
       | otherwise          -> roll bytes
     _ -> 0
+
+  bin2num' require_minimal max_size bytes =
+    if size > fromIntegral max_size || (require_minimal && not minimal)
+      then Nothing
+      else Just $ bin2num bytes
+   where
+    size    = BS.length bytes
+    minimal = isMinimallyEncoded bytes max_size
 
   num2bin n = BS.pack $ add_sign (n < 0) (unroll $ abs n)
 
@@ -182,3 +191,10 @@ isMinimallyEncoded bs max_size =
     [before_last, last] -> last .&. 0x7f /= 0 || before_last .&. 0x80 /= 0
     _                   -> True
   where size = BS.length bs
+
+isZero :: BS.ByteString -> Bool
+isZero bs =
+  size == 0 || (BS.all (== 0) init && BS.unpack last `elem` [[0], [0x80]])
+ where
+  size         = BS.length bs
+  (init, last) = BS.splitAt (size - 1) bs

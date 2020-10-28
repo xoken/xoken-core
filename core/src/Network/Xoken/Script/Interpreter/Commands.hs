@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 module Network.Xoken.Script.Interpreter.Commands where
 
+import           Data.Maybe                     ( mapMaybe )
 import           Data.Word                      ( Word8
                                                 , Word32
                                                 , Word64
@@ -22,6 +23,11 @@ maxOpsPerScript :: Integral a => Bool -> Bool -> a
 maxOpsPerScript genesis consensus
   | not genesis = 500
   | otherwise   = fromIntegral (maxBound :: Word32)
+
+maxScriptNumLength :: Integral a => Bool -> Bool -> a
+maxScriptNumLength genesis consensus | not genesis = 4
+                                     | consensus   = 750 * 1000
+                                     | otherwise   = 250 * 1000
 
 type Elem = BS.ByteString
 type Stack a = Seq.Seq a
@@ -49,6 +55,8 @@ data InterpreterCommand a
     -- num
     | Num2u32 BN (Word32 -> a)
     | LimitedNum Int Elem (BN -> a)
+    | Num Elem (BN -> a)
+    | Arith [Elem] ([BN] -> a)
     -- field access
     | Flag ScriptFlag (Bool -> a)
     | Flags (ScriptFlags -> a)
@@ -93,6 +101,7 @@ data InterpreterError
   | PubKeyCount
   | SigCount
   | InvalidOpCount
+  | NonMinimalNum
   deriving (Show, Eq)
 
 data Env = Env
@@ -182,20 +191,30 @@ interpretCmd = go where
     LimitedNum n x k -> if BS.length x <= n
       then go (k $ (bin2num x :: BN)) e
       else (e, Error NumOverflow)
+    Num bs k -> case num bs of
+      Just n -> go (k n) e
+      _      -> (e, Error NonMinimalNum)
+    Arith xs k -> if length xs /= length ys
+      then (e, Error NonMinimalNum)
+      else go (k ys) e
+      where ys = mapMaybe num xs
     -- field access
-    Flag f k          -> go (k $ get f $ script_flags e) e
+    Flag f k          -> go (k $ flag f) e
     Flags           k -> go (k $ script_flags e) e
     Checker         k -> go (k $ base_signature_checker e) e
     ScriptEndToHash k -> go (k $ script_end_to_hash e) e
-    Consensus       k -> go (k $ is_consensus e) e
+    Consensus       k -> go (k c) e
     OpCount         k -> go (k $ op_count e) e
     AddToOpCount x m  -> if opcount' > maxOpsPerScript genesis c
       then (e { op_count = opcount' }, Error InvalidOpCount)
       else go m (e { op_count = opcount' })
-     where
-      genesis  = get UTXO_AFTER_GENESIS (script_flags e)
-      opcount' = op_count e + x
-      c        = is_consensus e
+      where opcount' = op_count e + x
+   where
+    c = is_consensus e
+    flag x = get x (script_flags e)
+    genesis      = flag UTXO_AFTER_GENESIS
+    maxNumLength = maxScriptNumLength genesis c
+    num          = bin2num' (flag VERIFY_MINIMALDATA) maxNumLength
 
 -- signal
 terminate :: InterpreterError -> Cmd ()
@@ -252,6 +271,12 @@ bn2u32 n = liftF (Num2u32 n id)
 
 limitednum :: Int -> Elem -> Cmd BN
 limitednum n x = liftF (LimitedNum n x id)
+
+num' :: Elem -> Cmd BN
+num' x = liftF (Num x id)
+
+arith :: [Elem] -> Cmd [BN]
+arith xs = liftF (Arith xs id)
 
 -- field access
 flag :: ScriptFlag -> Cmd Bool

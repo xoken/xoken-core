@@ -41,11 +41,6 @@ import           Network.Xoken.Script.Interpreter.Util
 maxScriptElementSizeBeforeGenesis = 520
 sequenceLocktimeDisableFlag = 2 ^ 31
 
-maxScriptNumLength :: Integral a => Bool -> Bool -> a
-maxScriptNumLength genesis consensus | not genesis = 4
-                                     | consensus   = 750 * 1000
-                                     | otherwise   = 250 * 1000
-
 maxPubKeysPerMultiSig :: Integral a => Bool -> Bool -> a
 maxPubKeysPerMultiSig genesis consensus
   | not genesis = 20
@@ -136,8 +131,8 @@ opcode OP_16                 = pushint 16
 -- Flow control
 opcode OP_NOP                = pure ()
 opcode OP_VER                = terminate (Unimplemented OP_VER)
-opcode OP_IF                 = ifcmd ((/= 0) . num)
-opcode OP_NOTIF              = ifcmd ((== 0) . num)
+opcode OP_IF                 = ifcmd (not . isZero)
+opcode OP_NOTIF              = ifcmd isZero
 opcode OP_VERIF              = terminate (Unimplemented OP_VERIF)
 opcode OP_VERNOTIF           = terminate (Unimplemented OP_VERNOTIF)
 opcode OP_ELSE               = popbranch >>= \b -> if is_else_branch b
@@ -145,7 +140,7 @@ opcode OP_ELSE               = popbranch >>= \b -> if is_else_branch b
   else pushbranch
     (Branch { satisfied = not $ satisfied b, is_else_branch = True })
 opcode OP_ENDIF  = popbranch >> pure ()
-opcode OP_VERIFY = pop >>= \x -> when (num x == 0) (terminate Verify)
+opcode OP_VERIFY = pop >>= \x -> when (isZero x) (terminate Verify)
 opcode OP_RETURN = flag UTXO_AFTER_GENESIS >>= \case
   True -> stacksize >>= \s -> when (s == 0) success >> nontoplevelreturn
   _    -> terminate OpReturn
@@ -159,7 +154,7 @@ opcode OP_2OVER        = arrangepeek 4 (\[x1, x2, x3, x4] -> [x1, x2])
 opcode OP_2ROT =
   arrange 6 (\[x1, x2, x3, x4, x5, x6] -> [x3, x4, x5, x6, x1, x2])
 opcode OP_2SWAP = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
-opcode OP_IFDUP = peek >>= \x1 -> when (num x1 /= 0) (push x1)
+opcode OP_IFDUP = peek >>= \x1 -> when (not $ isZero x1) (push x1)
 opcode OP_DEPTH = stacksize >>= push . int2BS
 opcode OP_DROP  = pop >> pure ()
 opcode OP_DUP   = peek >>= push
@@ -304,11 +299,8 @@ arrangepeek n f = peekn n >>= pushn . f
 unary :: (Elem -> Elem) -> Cmd ()
 unary f = pop >>= push . f
 
-arith :: [Elem] -> Cmd [BN]
-arith = pure . map num
-
 unaryarith :: (BN -> BN) -> Cmd ()
-unaryarith f = pop >>= push . bin . f . num
+unaryarith f = pop >>= num' >>= push . bin . f
 
 binaryarith :: (BN -> BN -> BN) -> Cmd ()
 binaryarith f = popn 2 >>= arith >>= \[x1, x2] -> push $ bin $ f x1 x2

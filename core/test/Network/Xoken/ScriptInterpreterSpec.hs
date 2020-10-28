@@ -196,14 +196,13 @@ spec = do
           _ -> pure ()
     it "performs OP_NUM2BIN on arbitrary data"
       $ property
-      $ forAll arbitraryBS
-      $ \bnBS -> forAll arbitraryBS $ \sizeBS ->
-          test_script_with (stack_equal $ Seq.fromList [bnBS, sizeBS])
+      $ forAll arbitraryBN
+      $ \bn -> forAll arbitraryBN $ \size ->
+          test_script_with (stack_equal $ Seq.fromList $ bin <$> [bn, size])
                            [OP_NUM2BIN]
             $ \env error -> do
                 let
-                  [bn, size] = map num [bnBS, sizeBS]
-                  genesis    = get UTXO_AFTER_GENESIS (script_flags env)
+                  genesis = get UTXO_AFTER_GENESIS (script_flags env)
                   tooBig =
                     not genesis
                       && size
