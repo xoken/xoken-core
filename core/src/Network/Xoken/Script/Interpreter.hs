@@ -465,7 +465,28 @@ checkSignatureEncoding fs sigBS
   forkid     = get ENABLE_SIGHASH_FORKID fs
 
 isValidSignatureEncoding :: BS.ByteString -> Bool
-isValidSignatureEncoding sigBS = undefined
+isValidSignatureEncoding sigBS
+  | size < 9                   = False
+  | size > 73                  = False
+  | x 0 /= 0x30                = False
+  | x 1 /= size - 3            = False
+  | 5 + lenR >= size           = False
+  | lenR + lenS + 7 /= size    = False
+  | x 2 /= 0x02                = False
+  | lenR == 0                  = False
+  | x 4 .&. 0x80 /= 0          = False
+  | lenR > 1 && x 4 == 0 && not (x 5 .&. 0x80 /= 0) = False
+  | x (lenR + 4) /= 0x02       = False
+  | lenS == 0                  = False
+  | x (lenR + 6) .&. 0x80 /= 0 = False
+  | lenS > 1 && x (lenR + 6) == 0 && not (x (lenR + 7) .&. 0x80 /= 0) = False
+  | otherwise                  = True
+ where
+  size = BS.length sigBS
+  xs   = BS.unpack sigBS
+  x    = fromIntegral . (xs !!)
+  lenR = x 3
+  lenS = x (5 + lenR)
 
 checkLowDERSignature :: BS.ByteString -> Cmd ()
 checkLowDERSignature sigBS = do
