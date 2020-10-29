@@ -18,6 +18,7 @@ import           Data.EnumBitSet                ( get
                                                 , set
                                                 , empty
                                                 , fromEnums
+                                                , disjoint
                                                 )
 import           Control.Monad                  ( sequence_
                                                 , when
@@ -35,6 +36,7 @@ import qualified Data.ByteString               as BS
 import qualified Data.ByteArray                as BA
 import qualified Data.Sequence                 as Seq
 import           Network.Xoken.Script.Common
+import           Network.Xoken.Script.SigHash
 import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.Util
 
@@ -364,6 +366,7 @@ checksig finalize = popn 2 >>= \[sigBS, pubKeyBS] -> do
   fs     <- flags
   script <- scriptendtohash
   c      <- checker
+  checkSignatureEncoding fs sigBS
   checkPubKeyEncoding fs pubKeyBS
   let
     forkid  = get ENABLE_SIGHASH_FORKID fs
@@ -397,13 +400,14 @@ checkmultisig finalize = do
   when (nKeysCountSigned < 0 || nKeysCount > maxPubKeysPerMultiSig genesis c)
        (terminate PubKeyCount)
   addtoopcount nKeysCount
-  keys <- popn nKeysCountSigned
-  mapM (checkPubKeyEncoding fs) keys
+  keys             <- popn nKeysCountSigned
   nSigsBN          <- pop
   nSigsCountSigned <- fromIntegral <$> num' nSigsBN
   let nSigsCount = fromIntegral nSigsCountSigned :: Word64
   when (nSigsCountSigned < 0 || nSigsCount > nKeysCount) (terminate SigCount)
   sigs <- popn nSigsCountSigned
+  mapM_ (checkSignatureEncoding fs) sigs
+  mapM_ (checkPubKeyEncoding fs)    keys
   let forkid = get ENABLE_SIGHASH_FORKID fs
       clean sigBS ops = cleanupScriptCode ops sigBS (sigHash sigBS) forkid
       script'    = foldr clean script sigs
@@ -443,3 +447,28 @@ checkPubKeyEncoding fs pubKeyBS = do
   isCompressedPubKey = size == 33 && head `elem` [0x02, 0x03]
   size               = BS.length pubKeyBS
   head               = BS.unpack pubKeyBS !! 0
+
+checkSignatureEncoding :: ScriptFlags -> BS.ByteString -> Cmd ()
+checkSignatureEncoding fs sigBS
+  | BS.null sigBS = pure ()
+  | not (disjoint fs sigfs || isValidSignatureEncoding sigBS) = terminate SigDER
+  | otherwise = do
+    when (get VERIFY_LOW_S fs) (checkLowDERSignature sigBS)
+    when (get VERIFY_STRICTENC fs) $ do
+      when (isSigHashUnknown sh)      (terminate SigHashType)
+      when (not forkid && usesForkId) (terminate IllegalForkId)
+      when (forkid && not usesForkId) (terminate MustUseForkId)
+ where
+  sigfs      = fromEnums [VERIFY_DERSIG, VERIFY_LOW_S, VERIFY_STRICTENC]
+  sh         = sigHash sigBS
+  usesForkId = hasForkIdFlag sh
+  forkid     = get ENABLE_SIGHASH_FORKID fs
+
+isValidSignatureEncoding :: BS.ByteString -> Bool
+isValidSignatureEncoding sigBS = undefined
+
+checkLowDERSignature :: BS.ByteString -> Cmd ()
+checkLowDERSignature sigBS = do
+  when (not $ isValidSignatureEncoding sigBS) (terminate SigDER)
+  when (not $ isLowS sigBS)                   (terminate SigHighS)
+  where isLowS = undefined

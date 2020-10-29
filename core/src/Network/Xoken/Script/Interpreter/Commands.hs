@@ -96,13 +96,18 @@ data InterpreterError
   | NumOverflow
   | NegativeLocktime
   | UnsatisfiedLockTime
+  | IllegalForkId
+  | MustUseForkId
   | SigNullFail
   | SigNullDummy
+  | SigDER
+  | SigCount
+  | SigHashType
+  | SigHighS
   | InvalidSigOrPubKey
   | PubKeyCount
   | PubKeyType
   | NonCompressedPubKey
-  | SigCount
   | InvalidOpCount
   | NonMinimalNum
   deriving (Show, Eq)
