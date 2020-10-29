@@ -465,28 +465,39 @@ checkSignatureEncoding fs sigBS
   forkid     = get ENABLE_SIGHASH_FORKID fs
 
 isValidSignatureEncoding :: BS.ByteString -> Bool
-isValidSignatureEncoding sigBS
-  | size < 9                   = False
-  | size > 73                  = False
-  | x 0 /= 0x30                = False
-  | x 1 /= size - 3            = False
-  | 5 + lenR >= size           = False
-  | lenR + lenS + 7 /= size    = False
-  | x 2 /= 0x02                = False
-  | lenR == 0                  = False
-  | x 4 .&. 0x80 /= 0          = False
-  | lenR > 1 && x 4 == 0 && not (x 5 .&. 0x80 /= 0) = False
-  | x (lenR + 4) /= 0x02       = False
-  | lenS == 0                  = False
-  | x (lenR + 6) .&. 0x80 /= 0 = False
-  | lenS > 1 && x (lenR + 6) == 0 && not (x (lenR + 7) .&. 0x80 /= 0) = False
-  | otherwise                  = True
+isValidSignatureEncoding sigBS = and
+  [ size >= 9 && size <= 73
+  , code sig_elem == compound_code
+  , length_covers_entire_signature
+  , s_length_still_inside_signature
+  , sig_len_matches_element_len_sum
+  , test_number r_elem
+  , test_number s_elem
+  ]
  where
-  size = BS.length sigBS
-  xs   = BS.unpack sigBS
-  x    = fromIntegral . (xs !!)
-  lenR = x 3
-  lenS = x (5 + lenR)
+  size          = BS.length sigBS
+  xs            = BS.unpack sigBS
+  x             = fromIntegral . (xs !!)
+  compound_code = 0x30
+  int_code      = 0x02
+  negative byte = byte .&. 0x80 /= 0
+  code pos = x pos
+  len pos = x (pos + 1)
+  sig_elem                        = 0
+  r_elem                          = 2
+  s_elem                          = r_elem + len r_elem + 2
+  length_covers_entire_signature  = len sig_elem == size - 3
+  s_length_still_inside_signature = 5 + len r_elem < size
+  sig_len_matches_element_len_sum = len r_elem + len s_elem + 7 == size
+  test_number elem = and
+    [ code elem == int_code
+    , len elem /= 0
+    , not $ negative $ x (elem + 2)
+    , null_start_not_allowed_unless_negative
+    ]
+   where
+    null_start_not_allowed_unless_negative =
+      len elem <= 1 || x (elem + 2) /= 0 || negative (x $ elem + 3)
 
 checkLowDERSignature :: BS.ByteString -> Cmd ()
 checkLowDERSignature sigBS = do
