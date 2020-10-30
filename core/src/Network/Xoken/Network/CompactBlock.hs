@@ -139,7 +139,7 @@ instance Serialize CompactBlock where
         (CompactSize sidlen) <- get
         sids <- replicateM (fromIntegral sidlen) getCBShortTxID
         (CompactSize pftxlen) <- get
-        pftxns <- get
+        pftxns <- replicateM (fromIntegral pftxlen) get
         return $ CompactBlock header nonce sidlen sids pftxlen pftxns
     put (CompactBlock header nonce sidlen sids pftxlen pftxns) = do
         put header
