@@ -6,6 +6,7 @@ import           Data.Word                      ( Word8
                                                 , Word64
                                                 )
 import           Data.Maybe                     ( maybe )
+import           Data.List                      ( unfoldr )
 import           Data.Bits                      ( complement
                                                 , (.&.)
                                                 , (.|.)
@@ -30,6 +31,9 @@ import           Crypto.Hash                    ( hashWith
                                                 )
 import           Crypto.Secp256k1               ( importSig
                                                 , importPubKey
+                                                )
+import           Data.Serialize.Get             ( runGet
+                                                , getWord64le
                                                 )
 import           Data.Serialize                 ( encode )
 import qualified Data.ByteString               as BS
@@ -499,8 +503,38 @@ isValidSignatureEncoding sigBS = and
     null_start_not_allowed_unless_negative =
       len elem <= 1 || x (elem + 2) /= 0 || negative (x $ elem + 3)
 
+unsafeGetS :: BS.ByteString -> BS.ByteString
+unsafeGetS sigBS = BS.take (len s_elem) bs2
+ where
+  (_, bs2) = BS.splitAt (s_elem + 2) sigBS
+  s_elem   = 4
+  xs       = BS.unpack sigBS
+  x        = fromIntegral . (xs !!)
+  len pos = x (pos + 1)
+
 checkLowDERSignature :: BS.ByteString -> Cmd ()
 checkLowDERSignature sigBS = do
   when (not $ isValidSignatureEncoding sigBS) (terminate SigDER)
   when (not $ isLowS sigBS)                   (terminate SigHighS)
-  where isLowS = undefined
+
+isLowS :: BS.ByteString -> Bool
+isLowS sigBS = ecdsa_signature_parse_der_lax sigBS && not highS
+ where
+  ecdsa_signature_parse_der_lax = undefined
+  s                             = unsafeGetS sigBS
+  highS                         = case unfoldr readWord64 s of
+    [x0, x1, x2, x3] -> yes
+     where
+      no0  = x3 < d
+      yes0 = x3 > d
+      no   = no0 || ((x2 < c || x1 < b) && not yes0)
+      yes  = yes0 || ((x1 > b || x0 > a) && not no)
+    _ -> False
+  a = 0xDFE92F46681B20A0
+  b = 0x5D576E7357A4501D
+  c = 0xFFFFFFFFFFFFFFFF
+  d = 0x7FFFFFFFFFFFFFFF
+  readWord64 bs = case runGet getWord64le bs1 of
+    Right x -> Just (x, bs2)
+    _       -> Nothing
+    where (bs1, bs2) = BS.splitAt 8 bs
