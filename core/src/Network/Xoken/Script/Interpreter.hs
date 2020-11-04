@@ -503,26 +503,17 @@ isValidSignatureEncoding sigBS = and
     null_start_not_allowed_unless_negative =
       len elem <= 1 || x (elem + 2) /= 0 || negative (x $ elem + 3)
 
-unsafeGetS :: BS.ByteString -> BS.ByteString
-unsafeGetS sigBS = BS.take (len s_elem) bs2
- where
-  (_, bs2) = BS.splitAt (s_elem + 2) sigBS
-  s_elem   = 4
-  xs       = BS.unpack sigBS
-  x        = fromIntegral . (xs !!)
-  len pos = x (pos + 1)
-
 checkLowDERSignature :: BS.ByteString -> Cmd ()
 checkLowDERSignature sigBS = do
   when (not $ isValidSignatureEncoding sigBS) (terminate SigDER)
   when (not $ isLowS sigBS)                   (terminate SigHighS)
 
 isLowS :: BS.ByteString -> Bool
-isLowS sigBS = ecdsa_signature_parse_der_lax sigBS && not highS
+isLowS sigBS = case ecdsa_signature_parse_der_lax (BS.unpack sigBS) of
+  Just (r, s, _) -> not $ highS $ BS.pack s
+  _              -> False
  where
-  ecdsa_signature_parse_der_lax = undefined
-  s                             = unsafeGetS sigBS
-  highS                         = case unfoldr readWord64 s of
+  highS s = case unfoldr readWord64 s of
     [x0, x1, x2, x3] -> yes
      where
       no0  = x3 < d
@@ -538,3 +529,41 @@ isLowS sigBS = ecdsa_signature_parse_der_lax sigBS && not highS
     Right x -> Just (x, bs2)
     _       -> Nothing
     where (bs1, bs2) = BS.splitAt 8 bs
+
+ecdsa_signature_parse_der_lax :: [Word8] -> Maybe ([Word8], [Word8], [Word8])
+ecdsa_signature_parse_der_lax bytes = case check_type compound_code bytes of
+  Just (lenbyte : rest) -> parse_r_and_s $ if negative lenbyte
+    then drop (fromIntegral $ lenbyte - 0x80) rest
+    else rest
+  _ -> Nothing
+ where
+  compound_code = 0x30
+  int_code      = 0x02
+  negative byte = byte .&. 0x80 /= 0
+  check_type code (x : rest) = if x == code then Just rest else Nothing
+  check_type _    _          = Nothing
+  parse_r_and_s bytes = do
+    (r, after_r) <- parse_int bytes
+    (s, after_s) <- parse_int after_r
+    pure (r, s, after_s)
+  parse_int bytes = case check_type int_code bytes of
+    Just (lenbyte : rest) -> do
+      (len, after_len) <- if negative lenbyte
+        then do
+          let (lenbyte', after_zeros) = drop_zeros (lenbyte - 0x80) rest
+          when (lenbyte' >= 8) Nothing
+          parse_len 0 lenbyte' after_zeros
+        else Just (fromIntegral lenbyte, rest)
+      when (len >= 8) Nothing
+      let (elem, after_elem) = splitAt len after_len
+          compact            = dropWhile (== 0) elem
+      when (length compact > 32) Nothing
+      Just (compact, after_elem)
+    _ -> Nothing
+  drop_zeros 0 bytes      = (0, bytes)
+  drop_zeros n (0 : rest) = drop_zeros (n - 1) rest
+  drop_zeros n bytes      = (n, bytes)
+  parse_len out 0 bytes = Just (out, bytes)
+  parse_len out n (x : rest) =
+    parse_len (out `shiftL` 8 + fromIntegral x) (n - 1) rest
+  parse_len out _ _ = Nothing
