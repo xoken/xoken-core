@@ -66,6 +66,7 @@ data InterpreterCommand a
     | OpCount (Word64 -> a)
     | AddToOpCount Word64 a
     | MaxNumLength (Int -> a)
+    | ApplyGenesisAndConsensus (Bool -> Bool -> Integer) (Integer -> a)
     deriving (Functor)
 
 type Cmd = Free InterpreterCommand
@@ -121,7 +122,7 @@ data Env = Env
   , script_flags :: ScriptFlags
   , base_signature_checker :: BaseSignatureChecker
   , script_end_to_hash :: [ScriptOp]
-  , is_consensus :: Bool
+  , consensus :: Bool
   , op_count :: Word64
   }
 
@@ -211,15 +212,14 @@ interpretCmd = go where
     Flags           k -> go (k $ script_flags e) e
     Checker         k -> go (k $ base_signature_checker e) e
     ScriptEndToHash k -> go (k $ script_end_to_hash e) e
-    Consensus       k -> go (k c) e
     OpCount         k -> go (k $ op_count e) e
     AddToOpCount x m  -> if opcount' > maxOpsPerScript genesis c
       then (e { op_count = opcount' }, Error InvalidOpCount)
       else go m (e { op_count = opcount' })
       where opcount' = op_count e + x
-    MaxNumLength k -> go (k maxNumLength) e
+    ApplyGenesisAndConsensus f k -> go (k $ f genesis c) e
    where
-    c = is_consensus e
+    c = consensus e
     flag x = get x (script_flags e)
     genesis      = flag UTXO_AFTER_GENESIS
     maxNumLength = maxScriptNumLength genesis c
@@ -232,8 +232,8 @@ terminate e = liftF (Terminate e)
 success :: Cmd ()
 success = liftF Success
 
-nontoplevelreturn :: Cmd ()
-nontoplevelreturn = liftF (NonTopLevelReturn ())
+set_non_top_level_return :: Cmd ()
+set_non_top_level_return = liftF (NonTopLevelReturn ())
 
 -- stack
 push :: Elem -> Cmd ()
@@ -242,44 +242,44 @@ push x = liftF (Push x ())
 pop :: Cmd Elem
 pop = liftF (Pop id)
 
-popn :: Int -> Cmd [Elem]
-popn n = liftF (PopN n id)
+pop_n :: Int -> Cmd [Elem]
+pop_n n = liftF (PopN n id)
 
-popnth :: Word32 -> Cmd Elem
-popnth n = liftF (PopNth n id)
+pop_nth :: Word32 -> Cmd Elem
+pop_nth n = liftF (PopNth n id)
 
 peek :: Cmd Elem
 peek = liftF (Peek id)
 
-peekn :: Int -> Cmd [Elem]
-peekn n = liftF (PeekN n id)
+peek_n :: Int -> Cmd [Elem]
+peek_n n = liftF (PeekN n id)
 
-peeknth :: Word32 -> Cmd Elem
-peeknth n = liftF (PeekNth n id)
+peek_nth :: Word32 -> Cmd Elem
+peek_nth n = liftF (PeekNth n id)
 
-stacksize :: Cmd Int
-stacksize = liftF (StackSize id)
+stack_size :: Cmd Int
+stack_size = liftF (StackSize id)
 
 -- alt stack
-pushalt :: Elem -> Cmd ()
-pushalt x = liftF (PushAlt x ())
+push_alt :: Elem -> Cmd ()
+push_alt x = liftF (PushAlt x ())
 
-popalt :: Cmd Elem
-popalt = liftF (PopAlt id)
+pop_alt :: Cmd Elem
+pop_alt = liftF (PopAlt id)
 
 -- branch stack
-pushbranch :: Branch -> Cmd ()
-pushbranch b = liftF (PushBranch b ())
+push_branch :: Branch -> Cmd ()
+push_branch b = liftF (PushBranch b ())
 
-popbranch :: Cmd Branch
-popbranch = liftF (PopBranch id)
+pop_branch :: Cmd Branch
+pop_branch = liftF (PopBranch id)
 
 -- num
 bn2u32 :: BN -> Cmd Word32
 bn2u32 n = liftF (Num2u32 n id)
 
-limitednum :: Int -> Elem -> Cmd BN
-limitednum n x = liftF (LimitedNum n x id)
+limited_num :: Int -> Elem -> Cmd BN
+limited_num n x = liftF (LimitedNum n x id)
 
 num' :: Elem -> Cmd BN
 num' x = liftF (Num x id)
@@ -297,17 +297,15 @@ flags = liftF (Flags id)
 checker :: Cmd BaseSignatureChecker
 checker = liftF (Checker id)
 
-scriptendtohash :: Cmd [ScriptOp]
-scriptendtohash = liftF (ScriptEndToHash id)
-
-consensus :: Cmd Bool
-consensus = liftF (Consensus id)
+script_end :: Cmd [ScriptOp]
+script_end = liftF (ScriptEndToHash id)
 
 opcount :: Cmd Word64
 opcount = liftF (OpCount id)
 
-addtoopcount :: Word64 -> Cmd ()
-addtoopcount x = liftF (AddToOpCount x ())
+add_to_opcount :: Word64 -> Cmd ()
+add_to_opcount x = liftF (AddToOpCount x ())
 
-maxnumlength :: Cmd Int
-maxnumlength = liftF (MaxNumLength id)
+apply_genesis_and_consensus :: Integral a => (Bool -> Bool -> Integer) -> Cmd a
+apply_genesis_and_consensus f =
+  fromIntegral <$> liftF (ApplyGenesisAndConsensus f id)

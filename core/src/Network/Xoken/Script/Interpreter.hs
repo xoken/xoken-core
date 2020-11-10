@@ -79,8 +79,8 @@ interpretWith env = go (script_end_to_hash env) env where
       (increment_ops op)
       (if op == OP_CODESEPARATOR then e { script_end_to_hash = rest } else e)
     | otherwise = case op of
-      OP_IF       -> next (addtoopcount 1 >> pushbranch failed_branch) e
-      OP_NOTIF    -> next (addtoopcount 1 >> pushbranch failed_branch) e
+      OP_IF       -> next (add_to_opcount 1 >> push_branch failed_branch) e
+      OP_NOTIF    -> next (add_to_opcount 1 >> push_branch failed_branch) e
       OP_VERIF    -> next (increment_ops op) e
       OP_VERNOTIF -> next (increment_ops op) e
       OP_ELSE     -> next (increment_ops op) e
@@ -90,13 +90,13 @@ interpretWith env = go (script_end_to_hash env) env where
     execute op e =
       (failed_branches e == 0)
         && (not (non_top_level_return e) || op == OP_RETURN)
-    next cmd e = case interpretCmd (addtoopcount 1 >> cmd) e of
+    next cmd e = case interpretCmd (add_to_opcount 1 >> cmd) e of
       (e', OK         ) -> go rest e'
       (e', Error error) -> (e', Just error)
       (e', Return     ) -> (e', Nothing)
     failed_branch = Branch { satisfied = False, is_else_branch = False }
     is_over_OP_16 op = BS.last (encode op) > 0x60
-    increment_ops op | is_over_OP_16 op = addtoopcount 1 >> opcode op
+    increment_ops op | is_over_OP_16 op = add_to_opcount 1 >> opcode op
                      | otherwise        = opcode op
   go [] e = (e, Nothing)
 
@@ -109,7 +109,7 @@ empty_env script checker = Env { stack                  = Seq.empty
                                , script_flags           = empty
                                , base_signature_checker = checker
                                , script_end_to_hash     = scriptOps script
-                               , is_consensus           = True
+                               , consensus              = True
                                , op_count               = 0
                                }
 
@@ -141,18 +141,18 @@ opcode OP_IF                 = ifcmd (not . isZero)
 opcode OP_NOTIF              = ifcmd isZero
 opcode OP_VERIF              = terminate (Unimplemented OP_VERIF)
 opcode OP_VERNOTIF           = terminate (Unimplemented OP_VERNOTIF)
-opcode OP_ELSE               = popbranch >>= \b -> if is_else_branch b
+opcode OP_ELSE               = pop_branch >>= \b -> if is_else_branch b
   then terminate UnbalancedConditional
-  else pushbranch
+  else push_branch
     (Branch { satisfied = not $ satisfied b, is_else_branch = True })
-opcode OP_ENDIF  = popbranch >> pure ()
+opcode OP_ENDIF  = pop_branch >> pure ()
 opcode OP_VERIFY = pop >>= \x -> when (isZero x) (terminate Verify)
-opcode OP_RETURN = flag UTXO_AFTER_GENESIS >>= \case
-  True -> stacksize >>= \s -> when (s == 0) success >> nontoplevelreturn
-  _    -> terminate OpReturn
+opcode OP_RETURN = flag UTXO_AFTER_GENESIS >>= \genesis -> if genesis
+  then stack_size >>= \s -> when (s == 0) success >> set_non_top_level_return
+  else terminate OpReturn
 -- Stack operations
-opcode OP_TOALTSTACK   = pop >>= pushalt
-opcode OP_FROMALTSTACK = popalt >>= push
+opcode OP_TOALTSTACK   = pop >>= push_alt
+opcode OP_FROMALTSTACK = pop_alt >>= push
 opcode OP_2DROP        = pop >> pop >> pure ()
 opcode OP_2DUP         = arrangepeek 2 (\[x1, x2] -> [x1, x2])
 opcode OP_3DUP         = arrangepeek 3 (\[x1, x2, x3] -> [x1, x2, x3])
@@ -161,27 +161,27 @@ opcode OP_2ROT =
   arrange 6 (\[x1, x2, x3, x4, x5, x6] -> [x3, x4, x5, x6, x1, x2])
 opcode OP_2SWAP = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
 opcode OP_IFDUP = peek >>= \x1 -> when (not $ isZero x1) (push x1)
-opcode OP_DEPTH = stacksize >>= push . int2BS
+opcode OP_DEPTH = stack_size >>= push . int2BS
 opcode OP_DROP  = pop >> pure ()
 opcode OP_DUP   = peek >>= push
 opcode OP_NIP   = arrange 2 (\[x1, x2] -> [x2])
 opcode OP_OVER  = arrangepeek 2 (\[x1, x2] -> [x1])
-opcode OP_PICK  = pop >>= num' >>= bn2u32 >>= peeknth >>= push
-opcode OP_ROLL  = pop >>= num' >>= bn2u32 >>= popnth >>= push
+opcode OP_PICK  = pop >>= num' >>= bn2u32 >>= peek_nth >>= push
+opcode OP_ROLL  = pop >>= num' >>= bn2u32 >>= pop_nth >>= push
 opcode OP_ROT   = arrange 3 (\[x1, x2, x3] -> [x2, x3, x1])
 opcode OP_SWAP  = arrange 2 (\[x1, x2] -> [x2, x1])
 opcode OP_TUCK  = arrange 2 (\[x1, x2] -> [x2, x1, x2])
 -- Data manipulation
-opcode OP_CAT   = popn 2 >>= \[x1, x2] ->
+opcode OP_CAT   = pop_n 2 >>= \[x1, x2] ->
   isOverMaxElemSize (BS.length x1 + BS.length x2) >>= \case
     True -> terminate PushSize
     _    -> push (BS.append x1 x2)
-opcode OP_SPLIT = popn 2 >>= \[x1, x2] -> do
+opcode OP_SPLIT = pop_n 2 >>= \[x1, x2] -> do
   n <- num' x2
   if n < 0 || n > fromIntegral (BS.length x1)
     then terminate InvalidSplitRange
     else let (y1, y2) = BS.splitAt (fromIntegral n) x1 in pushn [y1, y2]
-opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] ->
+opcode OP_NUM2BIN = pop_n 2 >>= arith >>= \[x1, x2] ->
   isOverMaxElemSize x2 >>= \tooBig ->
     if x2 < 0 || x2 > fromIntegral (maxBound :: Int) || tooBig
       then terminate PushSize
@@ -189,7 +189,7 @@ opcode OP_NUM2BIN = popn 2 >>= arith >>= \[x1, x2] ->
                  push
                  (num2binpad x1 (fromIntegral x2))
 opcode OP_BIN2NUM = pop >>= \x -> do
-  maxNumLength <- maxnumlength
+  maxNumLength <- apply_genesis_and_consensus maxScriptNumLength
   let bs = bin (bin2num x)
   if isMinimallyEncoded bs maxNumLength
     then push bs
@@ -200,9 +200,9 @@ opcode OP_INVERT = unary (BS.map complement)
 opcode OP_AND    = binarybitwise (.&.)
 opcode OP_OR     = binarybitwise (.|.)
 opcode OP_XOR    = binarybitwise xor
-opcode OP_EQUAL  = popn 2 >>= push . bin . \[x1, x2] -> truth $ x1 == x2
+opcode OP_EQUAL  = pop_n 2 >>= push . bin . \[x1, x2] -> truth $ x1 == x2
 opcode OP_EQUALVERIFY =
-  popn 2 >>= \[x1, x2] -> when (x1 /= x2) (terminate EqualVerify)
+  pop_n 2 >>= \[x1, x2] -> when (x1 /= x2) (terminate EqualVerify)
 -- Arithmetic
 opcode OP_1ADD      = unaryarith succ
 opcode OP_1SUB      = unaryarith pred
@@ -215,17 +215,17 @@ opcode OP_0NOTEQUAL = unaryarith (truth . (/= 0))
 opcode OP_ADD       = binaryarith (+)
 opcode OP_SUB       = binaryarith (-)
 opcode OP_MUL       = binaryarith (*)
-opcode OP_DIV       = popn 2 >>= arith >>= \[x1, x2] ->
+opcode OP_DIV       = pop_n 2 >>= arith >>= \[x1, x2] ->
   if x2 == 0 then terminate DivByZero else push $ bin (x1 `div` x2)
-opcode OP_MOD = popn 2 >>= arith >>= \[x1, x2] ->
+opcode OP_MOD = pop_n 2 >>= arith >>= \[x1, x2] ->
   if x2 == 0 then terminate ModByZero else push $ bin (x1 `mod` x2)
-opcode OP_LSHIFT   = shift shiftL
-opcode OP_RSHIFT   = shift shiftR
-opcode OP_BOOLAND  = binaryarith (\a b -> truth (a /= 0 && b /= 0))
-opcode OP_BOOLOR   = binaryarith (\a b -> truth (a /= 0 || b /= 0))
-opcode OP_NUMEQUAL = binaryarith (btruth (==))
-opcode OP_NUMEQUALVERIFY =
-  popn 2 >>= arith >>= \[x1, x2] -> when (x1 /= x2) (terminate NumEqualVerify)
+opcode OP_LSHIFT         = shift shiftL
+opcode OP_RSHIFT         = shift shiftR
+opcode OP_BOOLAND        = binaryarith (\a b -> truth (a /= 0 && b /= 0))
+opcode OP_BOOLOR         = binaryarith (\a b -> truth (a /= 0 || b /= 0))
+opcode OP_NUMEQUAL       = binaryarith (btruth (==))
+opcode OP_NUMEQUALVERIFY = pop_n 2 >>= arith >>= \[x1, x2] ->
+  when (x1 /= x2) (terminate NumEqualVerify)
 opcode OP_NUMNOTEQUAL        = binaryarith (btruth (/=))
 opcode OP_LESSTHAN           = binaryarith (btruth (<))
 opcode OP_GREATERTHAN        = binaryarith (btruth (>))
@@ -233,7 +233,7 @@ opcode OP_LESSTHANOREQUAL    = binaryarith (btruth (<=))
 opcode OP_GREATERTHANOREQUAL = binaryarith (btruth (>=))
 opcode OP_MIN                = binaryarith min
 opcode OP_MAX                = binaryarith max
-opcode OP_WITHIN = popn 3 >>= arith >>= push . bin . \[x, min, max] ->
+opcode OP_WITHIN = pop_n 3 >>= arith >>= push . bin . \[x, min, max] ->
   truth $ min <= x && x < max
 -- Crypto
 opcode OP_RIPEMD160 = unary (BA.convert . hashWith RIPEMD160)
@@ -258,14 +258,14 @@ opcode OP_RESERVED2           = terminate (BadOpcode OP_RESERVED2)
 opcode OP_NOP1                = nop
 opcode OP_NOP2                = maybenop
   VERIFY_CHECKLOCKTIMEVERIFY
-  (pop >>= limitednum 5 >>= \n -> if n < 0
+  (pop >>= limited_num 5 >>= \n -> if n < 0
     then terminate NegativeLocktime
     else checker
       >>= \c -> when (not $ checkLockTime c n) (terminate UnsatisfiedLockTime)
   )
 opcode OP_NOP3 = maybenop
   VERIFY_CHECKSEQUENCEVERIFY
-  (pop >>= limitednum 5 >>= \n -> if n < 0
+  (pop >>= limited_num 5 >>= \n -> if n < 0
     then terminate NegativeLocktime
     else checker >>= \c -> when
       (n .&. sequenceLocktimeDisableFlag == 0 && not (checkSequence c n))
@@ -302,10 +302,10 @@ isOverMaxElemSize n = flag UTXO_AFTER_GENESIS >>= pure . isOver . not
   where isOver = (&& n > fromIntegral maxScriptElementSizeBeforeGenesis)
 
 arrange :: Int -> ([Elem] -> [Elem]) -> Cmd ()
-arrange n f = popn n >>= pushn . f
+arrange n f = pop_n n >>= pushn . f
 
 arrangepeek :: Int -> ([Elem] -> [Elem]) -> Cmd ()
-arrangepeek n f = peekn n >>= pushn . f
+arrangepeek n f = peek_n n >>= pushn . f
 
 unary :: (Elem -> Elem) -> Cmd ()
 unary f = pop >>= push . f
@@ -314,10 +314,10 @@ unaryarith :: (BN -> BN) -> Cmd ()
 unaryarith f = pop >>= num' >>= push . bin . f
 
 binaryarith :: (BN -> BN -> BN) -> Cmd ()
-binaryarith f = popn 2 >>= arith >>= \[x1, x2] -> push $ bin $ f x1 x2
+binaryarith f = pop_n 2 >>= arith >>= \[x1, x2] -> push $ bin $ f x1 x2
 
 binarybitwise :: (Word8 -> Word8 -> Word8) -> Cmd ()
-binarybitwise f = popn 2 >>= \[x1, x2] -> if BS.length x1 == BS.length x2
+binarybitwise f = pop_n 2 >>= \[x1, x2] -> if BS.length x1 == BS.length x2
   then push (BS.pack $ BS.zipWith f x1 x2)
   else terminate InvalidOperandSize
 
@@ -328,7 +328,7 @@ bin :: BN -> Elem
 bin = num2bin
 
 shift :: (Elem -> Int -> Elem) -> Cmd ()
-shift f = popn 2 >>= \[x1, x2] -> do
+shift f = pop_n 2 >>= \[x1, x2] -> do
   n <- num' x2
   if n < 0
     then terminate InvalidNumberRange
@@ -342,7 +342,7 @@ shift f = popn 2 >>= \[x1, x2] -> do
   max    = fromIntegral maxInt
 
 ifcmd :: (Elem -> Bool) -> Cmd ()
-ifcmd is_satisfied = stacksize >>= \case
+ifcmd is_satisfied = stack_size >>= \case
   0 -> terminate UnbalancedConditional
   _ -> do
     x  <- pop
@@ -351,7 +351,7 @@ ifcmd is_satisfied = stacksize >>= \case
     when
       (get VERIFY_MINIMALIF fs && (n > 1 || (n == 1 && x /= BS.singleton 1)))
       (terminate MinimalIf)
-    pushbranch (Branch { satisfied = is_satisfied x, is_else_branch = False })
+    push_branch (Branch { satisfied = is_satisfied x, is_else_branch = False })
 
 nop :: Cmd ()
 nop = flags >>= \fs -> when (get VERIFY_DISCOURAGE_UPGRADABLE_NOPS fs)
@@ -366,9 +366,9 @@ maybenop flag cmd = flags >>= \fs ->
     else cmd
 
 checksig :: (Bool -> Cmd ()) -> Cmd ()
-checksig finalize = popn 2 >>= \[sigBS, pubKeyBS] -> do
+checksig finalize = pop_n 2 >>= \[sigBS, pubKeyBS] -> do
   fs     <- flags
-  script <- scriptendtohash
+  script <- script_end
   c      <- checker
   checkSignatureEncoding fs sigBS
   checkPubKeyEncoding fs pubKeyBS
@@ -392,24 +392,22 @@ singlesig finalize check sigBS pubKeyBS verifynull =
 
 checkmultisig :: (Bool -> Cmd ()) -> Cmd ()
 checkmultisig finalize = do
-  c                <- consensus
   fs               <- flags
   impl             <- checker
-  script           <- scriptendtohash
+  script           <- script_end
   opCount          <- opcount
   nKeysBN          <- pop
   nKeysCountSigned <- fromIntegral <$> num' nKeysBN
+  maxPubKeys       <- apply_genesis_and_consensus maxPubKeysPerMultiSig
   let nKeysCount = fromIntegral nKeysCountSigned :: Word64
-      genesis    = get UTXO_AFTER_GENESIS fs
-  when (nKeysCountSigned < 0 || nKeysCount > maxPubKeysPerMultiSig genesis c)
-       (terminate PubKeyCount)
-  addtoopcount nKeysCount
-  keys             <- popn nKeysCountSigned
+  when (nKeysCountSigned < 0 || nKeysCount > maxPubKeys) (terminate PubKeyCount)
+  add_to_opcount nKeysCount
+  keys             <- pop_n nKeysCountSigned
   nSigsBN          <- pop
   nSigsCountSigned <- fromIntegral <$> num' nSigsBN
   let nSigsCount = fromIntegral nSigsCountSigned :: Word64
   when (nSigsCountSigned < 0 || nSigsCount > nKeysCount) (terminate SigCount)
-  sigs <- popn nSigsCountSigned
+  sigs <- pop_n nSigsCountSigned
   mapM_ (checkSignatureEncoding fs) sigs
   mapM_ (checkPubKeyEncoding fs)    keys
   let forkid = get ENABLE_SIGHASH_FORKID fs
@@ -558,7 +556,7 @@ ecdsa_signature_parse_der_lax bytes = case check_type compound_code bytes of
       let (elem, after_elem) = splitAt len after_len
           compact            = dropWhile (== 0) elem
       when (length compact > 32) Nothing
-      Just (compact, after_elem)
+      Just (replicate (32 - length compact) 0 ++ compact, after_elem)
     _ -> Nothing
   drop_zeros 0 bytes      = (0, bytes)
   drop_zeros n (0 : rest) = drop_zeros (n - 1) rest
