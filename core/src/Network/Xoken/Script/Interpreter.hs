@@ -75,7 +75,8 @@ standardScriptFlags = fromEnums
 interpretWith :: Env -> (Env, Maybe InterpreterError)
 interpretWith env = go (script_end_to_hash env) env where
   go (op : rest) e
-    | execute op e = next
+    | signal_disabled = (e, Just DisabledOpcode)
+    | execute = next
       (increment_ops op)
       (if op == OP_CODESEPARATOR then e { script_end_to_hash = rest } else e)
     | otherwise = case op of
@@ -87,7 +88,10 @@ interpretWith env = go (script_end_to_hash env) env where
       OP_ENDIF    -> next (increment_ops op) e
       _           -> next (increment_ops OP_NOP) e
    where
-    execute op e =
+    signal_disabled =
+      (op `elem` [OP_2MUL, OP_2DIV])
+        && (not (get UTXO_AFTER_GENESIS $ script_flags e) || execute)
+    execute =
       (failed_branches e == 0)
         && (not (non_top_level_return e) || op == OP_RETURN)
     next cmd e = case interpretCmd (add_to_opcount 1 >> cmd) e of

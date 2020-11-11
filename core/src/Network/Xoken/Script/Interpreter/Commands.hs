@@ -9,6 +9,7 @@ import           Data.Word                      ( Word8
 import           Data.EnumBitSet                ( T
                                                 , toEnums
                                                 , get
+                                                , put
                                                 )
 import           Data.Foldable                  ( toList )
 import           Control.Monad.Free             ( Free(Pure, Free)
@@ -111,6 +112,7 @@ data InterpreterError
   | NonCompressedPubKey
   | InvalidOpCount
   | NonMinimalNum
+  | DisabledOpcode
   deriving (Show, Eq)
 
 data Env = Env
@@ -128,6 +130,7 @@ data Env = Env
 
 stack_equal x e = e { stack = x }
 alt_stack_equal x e = e { alt_stack = x }
+flag_equal x v e = e { script_flags = put x v $ script_flags e }
 
 data Branch = Branch
   { satisfied :: Bool

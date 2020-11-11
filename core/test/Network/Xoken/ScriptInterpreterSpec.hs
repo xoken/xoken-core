@@ -231,6 +231,8 @@ spec = do
   describe "Arithmetic" $ do
     it "performs OP_1ADD on arbitrary data" $ unary_arith_success OP_1ADD succ
     it "performs OP_1SUB on arbitrary data" $ unary_arith_success OP_1SUB pred
+    it "handles disabled OP_2MUL on arbitrary data" $ testDisabledOp OP_2MUL
+    it "handles disabled OP_2DIV on arbitrary data" $ testDisabledOp OP_2DIV
     it "performs OP_NEGATE on arbitrary data"
       $ unary_arith_success OP_NEGATE negate
     it "performs OP_ABS on arbitrary data" $ unary_arith_success OP_ABS abs
@@ -346,6 +348,24 @@ elems = toList . stack
 alt_elems = toList . alt_stack
 num_check f elems = f (num <$> elems)
 arbitraryBN = BN <$> arbitrary
+
+testDisabledOp op = forAll (listOf arbitraryBS) $ \elems ->
+  forAll arbitraryBS $ \bs -> forAll arbitrary $ \flag ->
+    forAll arbitrary $ \failed -> do
+      test_script_with
+          ( flag_equal UTXO_AFTER_GENESIS flag
+          . stack_equal (Seq.fromList $ elems)
+          )
+          [ if failed then OP_1 else OP_0
+          , OP_IF
+          , OP_ELSE
+          , opPushData bs
+          , op
+          , OP_ENDIF
+          ]
+        $ if flag && failed
+            then success_with_elem_check (`shouldBe` elems)
+            else const (`shouldBe` Just DisabledOpcode)
 
 arbitraryPushOp =
   oneof [opPushData <$> bin <$> arbitraryBN, arbitraryIntScriptOp]
