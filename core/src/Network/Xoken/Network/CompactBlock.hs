@@ -16,6 +16,7 @@ module Network.Xoken.Network.CompactBlock
     , SendCompact(..)
     , GetBlockTxns(..)
     , BlockTxns(..)
+    , DiffIndexed(..)
     ) where
 
 import qualified Codec.Serialise as CBOR
@@ -105,7 +106,7 @@ encodeCBWord64 x = B.pack $ map fromIntegral wl
 -- | A PrefilledTx structure is used in HeaderAndShortIDs to provide a list of a few transactions explicitly.
 data PrefilledTx =
     PrefilledTx
-        { pfIndex :: !Word16
+        { pfIndex :: !Word16 -- differentially indexed
         , pfTx :: !Tx
         }
     deriving (Eq, Show, Read, Generic, Hashable)
@@ -140,14 +141,14 @@ instance Serialize CompactBlock where
         sids <- replicateM (fromIntegral sidlen) getCBShortTxID
         (CompactSize pftxlen) <- get
         pftxns <- replicateM (fromIntegral pftxlen) get
-        return $ CompactBlock header nonce sidlen sids pftxlen pftxns
+        return $ CompactBlock header nonce sidlen sids pftxlen (fromDiffIndices pftxns)
     put (CompactBlock header nonce sidlen sids pftxlen pftxns) = do
         put header
         put nonce
         putCompactSize sidlen
         forM_ sids putCBShortTxID
         putCompactSize pftxlen
-        put pftxns
+        put (toDiffIndices pftxns)
 
 -- | The "high-bandwidth" mode, is enabled by setting the first boolean to 1 in a sendcmpct message.
 -- | The "low-bandwidth" mode is enabled by setting the first boolean to 0 
@@ -173,7 +174,7 @@ data GetBlockTxns =
     GetBlockTxns
         { gbBlockhash :: !BlockHash
         , gbIndexesLength :: !Word16
-        , gbIndexes :: ![Word16]
+        , gbIndexes :: ![Word16] -- differentially encoded
         }
     deriving (Eq, Show, Read, Generic)
 
@@ -186,11 +187,11 @@ instance Serialize GetBlockTxns where
                 (fromIntegral indlen)
                 (do (CompactSize idx) <- get
                     return idx)
-        return $ GetBlockTxns bhash indlen indexes
+        return $ GetBlockTxns bhash indlen (fromDiffIndices indexes)
     put (GetBlockTxns bhash indlen indexes) = do
         put bhash
         putCompactSize indlen
-        forM_ indexes putCompactSize
+        forM_ (toDiffIndices indexes) putCompactSize
 
 --
 -- | structure is used to provide some of the transactions in a block, as requested.
@@ -213,3 +214,27 @@ instance Serialize BlockTxns where
         putCompactSize txnlen
         forM_ txns put
 --
+
+class DiffIndexed a where
+    toDiffIndices :: [a] -> [a]
+    fromDiffIndices :: [a] -> [a]
+
+instance DiffIndexed Word16 where
+    toDiffIndices [] = []
+    toDiffIndices (x:xs) = x:(toDiffIndicesWith xs x)
+        where toDiffIndicesWith [] _ = []
+              toDiffIndicesWith (x:xs) n = (x - n - 1):(toDiffIndicesWith xs x)
+    fromDiffIndices [] = []
+    fromDiffIndices (x:xs) = x:(fromDiffIndicesWith xs x)
+        where fromDiffIndicesWith [] _ = []
+              fromDiffIndicesWith (x:xs) n = let ind = (n + x + 1) in ind:(fromDiffIndicesWith xs ind)
+
+instance DiffIndexed PrefilledTx where
+    toDiffIndices [] = []
+    toDiffIndices (x@(PrefilledTx i t):xs) = x:(toDiffIndicesWith xs i)
+        where toDiffIndicesWith [] _ = []
+              toDiffIndicesWith (x:xs) n = (x {pfIndex = (pfIndex x) - n - 1}):(toDiffIndicesWith xs i) 
+    fromDiffIndices [] = []
+    fromDiffIndices (x@(PrefilledTx i t):xs) = x:(fromDiffIndicesWith xs i)
+        where fromDiffIndicesWith [] _ = []
+              fromDiffIndicesWith (x:xs) n = let ind = (n + (pfIndex x) + 1) in (x {pfIndex = ind}):(fromDiffIndicesWith xs ind)
