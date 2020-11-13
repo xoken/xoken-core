@@ -260,21 +260,9 @@ opcode OP_RESERVED            = terminate (BadOpcode OP_RESERVED)
 opcode OP_RESERVED1           = terminate (BadOpcode OP_RESERVED1)
 opcode OP_RESERVED2           = terminate (BadOpcode OP_RESERVED2)
 opcode OP_NOP1                = nop
-opcode OP_NOP2                = maybenop
-  VERIFY_CHECKLOCKTIMEVERIFY
-  (pop >>= limited_num 5 >>= \n -> if n < 0
-    then terminate NegativeLocktime
-    else checker
-      >>= \c -> when (not $ checkLockTime c n) (terminate UnsatisfiedLockTime)
-  )
-opcode OP_NOP3 = maybenop
-  VERIFY_CHECKSEQUENCEVERIFY
-  (pop >>= limited_num 5 >>= \n -> if n < 0
-    then terminate NegativeLocktime
-    else checker >>= \c -> when
-      (n .&. sequenceLocktimeDisableFlag == 0 && not (checkSequence c n))
-      (terminate UnsatisfiedLockTime)
-  )
+opcode OP_NOP2 = maybenop VERIFY_CHECKLOCKTIMEVERIFY checkLockTime (const True)
+opcode OP_NOP3 = maybenop VERIFY_CHECKSEQUENCEVERIFY checkSequence
+  $ \n -> n .&. sequenceLocktimeDisableFlag == 0
 opcode OP_NOP4  = nop
 opcode OP_NOP5  = nop
 opcode OP_NOP6  = nop
@@ -361,13 +349,17 @@ nop :: Cmd ()
 nop = flags >>= \fs -> when (get VERIFY_DISCOURAGE_UPGRADABLE_NOPS fs)
                             (terminate DiscourageUpgradableNOPs)
 
-maybenop :: ScriptFlag -> Cmd () -> Cmd ()
-maybenop flag cmd = flags >>= \fs ->
-  if (  (not (get flag fs) || get UTXO_AFTER_GENESIS fs)
-     && get VERIFY_DISCOURAGE_UPGRADABLE_NOPS fs
-     )
-    then terminate DiscourageUpgradableNOPs
-    else cmd
+maybenop
+  :: ScriptFlag
+  -> (BaseSignatureChecker -> BN -> Bool)
+  -> (BN -> Bool)
+  -> Cmd ()
+maybenop flag check enabled = flags >>= \fs ->
+  if (not (get flag fs) || get UTXO_AFTER_GENESIS fs)
+    then nop
+    else pop >>= limited_num 5 >>= \n -> checker >>= \c -> do
+      when (n < 0)                  (terminate NegativeLocktime)
+      when (enabled n && check c n) (terminate UnsatisfiedLockTime)
 
 checksig :: (Bool -> Cmd ()) -> Cmd ()
 checksig finalize = pop_n 2 >>= \[sigBS, pubKeyBS] -> do
