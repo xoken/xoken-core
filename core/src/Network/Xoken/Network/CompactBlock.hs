@@ -17,6 +17,7 @@ module Network.Xoken.Network.CompactBlock
     , GetBlockTxns(..)
     , BlockTxns(..)
     , DiffIndexed(..)
+    , PrefilledTx(..)
     ) where
 
 import qualified Codec.Serialise as CBOR
