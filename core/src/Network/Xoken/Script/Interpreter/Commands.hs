@@ -106,6 +106,7 @@ data InterpreterError
   | SigCount
   | SigHashType
   | SigHighS
+  | SigPushOnly
   | InvalidSigOrPubKey
   | PubKeyCount
   | PubKeyType
@@ -113,6 +114,9 @@ data InterpreterError
   | InvalidOpCount
   | NonMinimalNum
   | DisabledOpcode
+  | EvalFalse
+  | VerifyScriptAssertion
+  | CleanStack
   deriving (Show, Eq)
 
 data Env = Env
@@ -123,7 +127,7 @@ data Env = Env
   , non_top_level_return :: Bool
   , script_flags :: ScriptFlags
   , base_signature_checker :: BaseSignatureChecker
-  , script_end_to_hash :: [ScriptOp]
+  , script :: [ScriptOp]
   , consensus :: Bool
   , op_count :: Word64
   }
@@ -214,7 +218,7 @@ interpretCmd = go where
     Flag f k          -> go (k $ flag f) e
     Flags           k -> go (k $ script_flags e) e
     Checker         k -> go (k $ base_signature_checker e) e
-    ScriptEndToHash k -> go (k $ script_end_to_hash e) e
+    ScriptEndToHash k -> go (k $ script e) e
     OpCount         k -> go (k $ op_count e) e
     AddToOpCount x m  -> if opcount' > maxOpsPerScript genesis c
       then (e { op_count = opcount' }, Error InvalidOpCount)

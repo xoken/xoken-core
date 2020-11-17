@@ -72,13 +72,55 @@ standardScriptFlags = fromEnums
   , VERIFY_CHECKSEQUENCEVERIFY
   ]
 
+verifyScript :: Env -> Script -> Script -> Maybe InterpreterError
+verifyScript env sigScript pubKeyScript
+  | get VERIFY_SIGPUSHONLY fs && not (isPushOnly sigScript) = Just SigPushOnly
+  | error_sig /= Nothing = error_sig
+  | error_pubkey /= Nothing = error_pubkey
+  | empty_or_0_top (stack env_after_pubkey) = Just EvalFalse
+  | check_ps2sh = if error_ps2sh /= Nothing
+    then error_ps2sh
+    else checkCleanStack env_after_pubkey2
+  | otherwise = checkCleanStack env_after_pubkey
+ where
+  flags = script_flags env
+  fs    = if get ENABLE_SIGHASH_FORKID flags
+    then set VERIFY_STRICTENC flags
+    else flags
+  genesis   = get UTXO_AFTER_GENESIS fs
+  fixed_env = env { script_flags = fs }
+  (env_after_sig, error_sig) =
+    interpretWith $ fixed_env { script = scriptOps sigScript }
+  (env_after_pubkey, error_pubkey) =
+    interpretWith $ fixed_env { script = scriptOps pubKeyScript }
+  (env_after_pubkey2, error_pubkey2) =
+    interpretWith $ fixed_env { script = scriptOps pubKey2, stack = stackCopy }
+  stackCopy = stack
+    $ if get VERIFY_P2SH fs && not genesis then env_after_sig else fixed_env
+  empty_or_0_top s = case Seq.viewr s of
+    _ Seq.:> x -> isZero x
+    _          -> True
+  check_ps2sh = get VERIFY_P2SH fs && not genesis && isP2SH pubKeyScript
+  error_ps2sh | not (isPushOnly sigScript) = Just SigPushOnly
+              | null stackCopy             = Just VerifyScriptAssertion
+              | empty_or_0_top (stack env_after_pubkey2) = Just EvalFalse
+              | otherwise                  = Nothing
+  checkCleanStack final_env = if get VERIFY_CLEANSTACK fs then f else Nothing
+   where
+    f | not (get VERIFY_P2SH fs)      = Just VerifyScriptAssertion
+      | length (stack final_env) /= 1 = Just CleanStack
+      | otherwise                     = Nothing
+  isPushOnly = undefined
+  isP2SH     = undefined
+  pubKey2    = undefined
+
 interpretWith :: Env -> (Env, Maybe InterpreterError)
-interpretWith env = go (script_end_to_hash env) env where
+interpretWith env = go (script env) env where
   go (op : rest) e
     | signal_disabled = (e, Just DisabledOpcode)
     | execute = next
       (increment_ops op)
-      (if op == OP_CODESEPARATOR then e { script_end_to_hash = rest } else e)
+      (if op == OP_CODESEPARATOR then e { script = rest } else e)
     | otherwise = case op of
       OP_IF       -> next (add_to_opcount 1 >> push_branch failed_branch) e
       OP_NOTIF    -> next (add_to_opcount 1 >> push_branch failed_branch) e
@@ -112,7 +154,7 @@ empty_env script checker = Env { stack                  = Seq.empty
                                , non_top_level_return   = False
                                , script_flags           = empty
                                , base_signature_checker = checker
-                               , script_end_to_hash     = scriptOps script
+                               , script                 = scriptOps script
                                , consensus              = True
                                , op_count               = 0
                                }
