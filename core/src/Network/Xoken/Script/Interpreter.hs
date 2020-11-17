@@ -145,10 +145,11 @@ opcode OP_IF                 = ifcmd (not . isZero)
 opcode OP_NOTIF              = ifcmd isZero
 opcode OP_VERIF              = terminate (Unimplemented OP_VERIF)
 opcode OP_VERNOTIF           = terminate (Unimplemented OP_VERNOTIF)
-opcode OP_ELSE               = pop_branch >>= \b -> if is_else_branch b
-  then terminate UnbalancedConditional
-  else push_branch
-    (Branch { satisfied = not $ satisfied b, is_else_branch = True })
+opcode OP_ELSE               = pop_branch >>= \branch ->
+  flag UTXO_AFTER_GENESIS >>= \genesis -> do
+    when (is_else_branch branch && genesis) (terminate UnbalancedConditional)
+    push_branch
+      $ Branch { satisfied = not $ satisfied branch, is_else_branch = True }
 opcode OP_ENDIF  = pop_branch >> pure ()
 opcode OP_VERIFY = pop >>= \x -> when (isZero x) (terminate Verify)
 opcode OP_RETURN = flag UTXO_AFTER_GENESIS >>= \genesis -> if genesis

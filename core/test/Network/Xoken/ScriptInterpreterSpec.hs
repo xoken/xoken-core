@@ -156,9 +156,15 @@ spec = do
     test [OP_1, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF] [1]
     test [OP_RETURN, OP_ELSE]                         []
     testNoFlags (Just OpReturn) [OP_RETURN]
+    it "handles double else branch" $ forAll arbitrary $ \genesis_flag ->
+      test_script_with (flag_equal UTXO_AFTER_GENESIS genesis_flag)
+                       [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
+        $ const
+            (`shouldBe` if genesis_flag
+              then Just UnbalancedConditional
+              else Nothing
+            )
     terminatesWith UnbalancedConditional [OP_IF]
-    terminatesWith UnbalancedConditional
-                   [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
     terminatesWith UnbalancedConditional [OP_ELSE]
     terminatesWith UnbalancedConditional [OP_ENDIF]
     terminatesWith UnbalancedConditional
