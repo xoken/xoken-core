@@ -35,7 +35,7 @@ import           Crypto.Secp256k1               ( importSig
 import           Data.Serialize.Get             ( runGet
                                                 , getWord64le
                                                 )
-import           Data.Serialize                 ( encode )
+import qualified Data.Serialize                as S
 import qualified Data.ByteString               as BS
 import qualified Data.ByteArray                as BA
 import qualified Data.Sequence                 as Seq
@@ -78,9 +78,9 @@ verifyScript env sigScript pubKeyScript
   | error_sig /= Nothing = error_sig
   | error_pubkey /= Nothing = error_pubkey
   | empty_or_0_top (stack env_after_pubkey) = Just EvalFalse
-  | check_ps2sh = if error_ps2sh /= Nothing
-    then error_ps2sh
-    else checkCleanStack env_after_pubkey2
+  | check_P2SH = if error_P2SH /= Nothing
+    then error_P2SH
+    else maybe Nothing checkCleanStack maybe_env_after_pubkey2
   | otherwise = checkCleanStack env_after_pubkey
  where
   flags = script_flags env
@@ -93,26 +93,28 @@ verifyScript env sigScript pubKeyScript
     interpretWith $ fixed_env { script = scriptOps sigScript }
   (env_after_pubkey, error_pubkey) =
     interpretWith $ fixed_env { script = scriptOps pubKeyScript }
-  (env_after_pubkey2, error_pubkey2) =
-    interpretWith $ fixed_env { script = scriptOps pubKey2, stack = stackCopy }
+  maybe_env_after_pubkey2 = go <$> maybe_pubKey2   where
+    go pubKey2 = fst $ interpretWith $ fixed_env { script = scriptOps pubKey2
+                                                 , stack  = stackCopy
+                                                 }
   stackCopy = stack
     $ if get VERIFY_P2SH fs && not genesis then env_after_sig else fixed_env
   empty_or_0_top s = case Seq.viewr s of
     _ Seq.:> x -> isZero x
     _          -> True
-  check_ps2sh = get VERIFY_P2SH fs && not genesis && isP2SH pubKeyScript
-  error_ps2sh | not (isPushOnly sigScript) = Just SigPushOnly
-              | null stackCopy             = Just VerifyScriptAssertion
-              | empty_or_0_top (stack env_after_pubkey2) = Just EvalFalse
-              | otherwise                  = Nothing
-  checkCleanStack final_env = if get VERIFY_CLEANSTACK fs then f else Nothing
-   where
+  check_P2SH = get VERIFY_P2SH fs && not genesis && isP2SH pubKeyScript
+  error_P2SH = if isPushOnly sigScript
+    then maybe (Just VerifyScriptAssertion)
+               (ifso (Just EvalFalse) . empty_or_0_top . stack)
+               maybe_env_after_pubkey2
+    else Just SigPushOnly
+  checkCleanStack final_env = ifso f (get VERIFY_CLEANSTACK fs)   where
     f | not (get VERIFY_P2SH fs)      = Just VerifyScriptAssertion
       | length (stack final_env) /= 1 = Just CleanStack
       | otherwise                     = Nothing
-  isPushOnly = undefined
-  isP2SH     = undefined
-  pubKey2    = undefined
+  maybe_pubKey2 = case Seq.viewr stackCopy of
+    _ Seq.:> x -> either (const Nothing) Just $ S.decode x
+    _          -> Nothing
 
 interpretWith :: Env -> (Env, Maybe InterpreterError)
 interpretWith env = go (script env) env where
@@ -141,9 +143,8 @@ interpretWith env = go (script env) env where
       (e', Error error) -> (e', Just error)
       (e', Return     ) -> (e', Nothing)
     failed_branch = Branch { satisfied = False, is_else_branch = False }
-    is_over_OP_16 op = BS.last (encode op) > 0x60
-    increment_ops op | is_over_OP_16 op = add_to_opcount 1 >> opcode op
-                     | otherwise        = opcode op
+    increment_ops op | isPush op = opcode op
+                     | otherwise = add_to_opcount 1 >> opcode op
   go [] e = (e, Nothing)
 
 empty_env :: Script -> BaseSignatureChecker -> Env

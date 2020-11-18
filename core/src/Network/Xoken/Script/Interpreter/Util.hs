@@ -23,6 +23,7 @@ import           Crypto.Secp256k1               ( Sig
                                                 , msg
                                                 , verifySig
                                                 )
+import           Data.Serialize                 ( encode )
 import           Data.ByteString.Short          ( fromShort )
 import qualified Data.ByteString               as BS
 import           Network.Xoken.Script.Common
@@ -198,3 +199,17 @@ isZero bs =
  where
   size         = BS.length bs
   (init, last) = BS.splitAt (size - 1) bs
+
+isPush :: ScriptOp -> Bool
+isPush = (<= OP_16)
+
+isPushOnly :: Script -> Bool
+isPushOnly = all isPush . scriptOps
+
+isP2SH :: Script -> Bool
+isP2SH (Script ops@(OP_HASH160 : OP_PUSHDATA bs OPCODE : rest)) =
+  BS.length bs == 0x14 && length ops == 23 && last rest == OP_EQUAL
+isP2SH _ = False
+
+ifso :: Maybe a -> Bool -> Maybe a
+ifso y x = if x then y else Nothing
