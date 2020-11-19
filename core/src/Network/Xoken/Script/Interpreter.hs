@@ -16,7 +16,7 @@ import           Data.Bits                      ( complement
                                                 )
 import           Data.Bits.ByteString
 import           Data.EnumBitSet                ( get
-                                                , set
+                                                , put
                                                 , empty
                                                 , fromEnums
                                                 , disjoint
@@ -73,7 +73,7 @@ standardScriptFlags = fromEnums
   ]
 
 verifyScript :: Env -> Script -> Script -> Maybe InterpreterError
-verifyScript env sigScript pubKeyScript
+verifyScript e sigScript pubKeyScript
   | get VERIFY_SIGPUSHONLY fs && not (isPushOnly sigScript) = Just SigPushOnly
   | error_sig /= Nothing = error_sig
   | error_pubkey /= Nothing = error_pubkey
@@ -83,22 +83,19 @@ verifyScript env sigScript pubKeyScript
     else maybe Nothing checkCleanStack maybe_env_after_pubkey2
   | otherwise = checkCleanStack env_after_pubkey
  where
-  flags = script_flags env
-  fs    = if get ENABLE_SIGHASH_FORKID flags
-    then set VERIFY_STRICTENC flags
-    else flags
-  genesis   = get UTXO_AFTER_GENESIS fs
-  fixed_env = env { script_flags = fs }
-  (env_after_sig, error_sig) =
-    interpretWith $ fixed_env { script = scriptOps sigScript }
+  fs = put VERIFY_STRICTENC (get ENABLE_SIGHASH_FORKID flags) flags
+    where flags = script_flags e
+  genesis                    = get UTXO_AFTER_GENESIS fs
+  env                        = flags_equal fs e
+  (env_after_sig, error_sig) = interpretWith $ script_equal sigScript env
   (env_after_pubkey, error_pubkey) =
-    interpretWith $ fixed_env { script = scriptOps pubKeyScript }
+    interpretWith $ env { script = scriptOps pubKeyScript }
   maybe_env_after_pubkey2 = go <$> maybe_pubKey2   where
-    go pubKey2 = fst $ interpretWith $ fixed_env { script = scriptOps pubKey2
-                                                 , stack  = stackCopy
-                                                 }
-  stackCopy = stack
-    $ if get VERIFY_P2SH fs && not genesis then env_after_sig else fixed_env
+    go pubKey2 = fst $ interpretWith $ env { script = scriptOps pubKey2
+                                           , stack  = stackCopy
+                                           }
+  stackCopy =
+    stack $ if get VERIFY_P2SH fs && not genesis then env_after_sig else env
   empty_or_0_top s = case Seq.viewr s of
     _ Seq.:> x -> isZero x
     _          -> True
@@ -228,7 +225,7 @@ opcode OP_SPLIT = pop_n 2 >>= \[x1, x2] -> do
   n <- num' x2
   if n < 0 || n > fromIntegral (BS.length x1)
     then terminate InvalidSplitRange
-    else let (y1, y2) = BS.splitAt (fromIntegral n) x1 in pushn [y1, y2]
+    else let (y1, y2) = BS.splitAt (fromIntegral n) x1 in push_n [y1, y2]
 opcode OP_NUM2BIN = pop_n 2 >>= arith >>= \[x1, x2] ->
   isOverMaxElemSize x2 >>= \tooBig ->
     if x2 < 0 || x2 > fromIntegral (maxBound :: Int) || tooBig
@@ -318,9 +315,6 @@ opcode OP_NOP10 = nop
 pushint :: Int -> Cmd ()
 pushint = push . int2BS
 
-pushn :: [Elem] -> Cmd ()
-pushn = sequence_ . map push
-
 pushdata :: BS.ByteString -> PushDataType -> Cmd ()
 pushdata bs size = flag VERIFY_MINIMALDATA >>= \case
   True -> maybe
@@ -338,10 +332,10 @@ isOverMaxElemSize n = flag UTXO_AFTER_GENESIS >>= pure . isOver . not
   where isOver = (&& n > fromIntegral maxScriptElementSizeBeforeGenesis)
 
 arrange :: Int -> ([Elem] -> [Elem]) -> Cmd ()
-arrange n f = pop_n n >>= pushn . f
+arrange n f = pop_n n >>= push_n . f
 
 arrangepeek :: Int -> ([Elem] -> [Elem]) -> Cmd ()
-arrangepeek n f = peek_n n >>= pushn . f
+arrangepeek n f = peek_n n >>= push_n . f
 
 unary :: (Elem -> Elem) -> Cmd ()
 unary f = pop >>= push . f

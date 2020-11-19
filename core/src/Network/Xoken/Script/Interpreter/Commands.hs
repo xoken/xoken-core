@@ -40,13 +40,14 @@ data InterpreterCommand a
     | NonTopLevelReturn a
     -- stack
     | Push Elem a
+    | PushN [Elem] a
     | Pop (Elem -> a)
     | PopN Int ([Elem] -> a)
     | PopNth Word32 (Elem -> a)
     | Peek (Elem -> a)
     | PeekN Int ([Elem] -> a)
     | PeekNth Word32 (Elem -> a)
-    | StackSize (Int -> a)
+    | StackDepth (Int -> a)
     -- alt stack
     | PushAlt Elem a
     | PopAlt (Elem -> a)
@@ -117,6 +118,7 @@ data InterpreterError
   | EvalFalse
   | VerifyScriptAssertion
   | CleanStack
+  | StackSize
   deriving (Show, Eq)
 
 data Env = Env
@@ -134,7 +136,9 @@ data Env = Env
 
 stack_equal x e = e { stack = x }
 alt_stack_equal x e = e { alt_stack = x }
-flag_equal x v e = e { script_flags = put x v $ script_flags e }
+flags_equal x e = e { script_flags = x }
+flag_equal x v e = flags_equal (put x v $ script_flags e) e
+script_equal x e = e { script = scriptOps x }
 
 data Branch = Branch
   { satisfied :: Bool
@@ -147,6 +151,8 @@ rindex i e = length (stack e) - i
 truth :: Integral a => Bool -> a
 truth x = if x then 1 else 0
 
+maxStackElemsBeforeGenesis = 1000
+
 data CmdResult = OK | Error InterpreterError | Return
 
 interpretCmd :: Cmd () -> Env -> (Env, CmdResult)
@@ -158,7 +164,8 @@ interpretCmd = go where
     Success             -> (e, Return)
     NonTopLevelReturn m -> go m (e { non_top_level_return = True })
     -- stack
-    Push x m            -> go m (e { stack = stack e Seq.|> x })
+    Push  x  m          -> checkElems m (e { stack = stack e Seq.|> x })
+    PushN xs m -> checkElems m (e { stack = stack e Seq.>< Seq.fromList xs })
     Pop k               -> case Seq.viewr (stack e) of
       rest Seq.:> x -> go (k x) (e { stack = rest })
       _             -> (e, Error StackUnderflow)
@@ -179,10 +186,10 @@ interpretCmd = go where
       Just x -> go (k x) e
       _      -> (e, Error StackUnderflow)
       where i = rindex (fromIntegral n) e - 1
-    StackSize k -> go (k $ length $ stack e) e
+    StackDepth k -> go (k $ length $ stack e) e
     -- alt stack
-    PushAlt x m -> go m (e { alt_stack = x Seq.<| alt_stack e })
-    PopAlt k    -> case Seq.viewl (alt_stack e) of
+    PushAlt x m  -> checkElems m (e { alt_stack = x Seq.<| alt_stack e })
+    PopAlt k     -> case Seq.viewl (alt_stack e) of
       x Seq.:< rest -> go (k x) (e { alt_stack = rest })
       _             -> (e, Error InvalidAltstackOperation)
     -- branch stack
@@ -231,6 +238,12 @@ interpretCmd = go where
     genesis      = flag UTXO_AFTER_GENESIS
     maxNumLength = maxScriptNumLength genesis c
     num          = bin2num' (flag VERIFY_MINIMALDATA) maxNumLength
+    checkElems m e =
+      if not genesis
+           && (length (stack e) + length (alt_stack e))
+           >  maxStackElemsBeforeGenesis
+        then (e, Error StackSize)
+        else go m e
 
 -- signal
 terminate :: InterpreterError -> Cmd ()
@@ -245,6 +258,9 @@ set_non_top_level_return = liftF (NonTopLevelReturn ())
 -- stack
 push :: Elem -> Cmd ()
 push x = liftF (Push x ())
+
+push_n :: [Elem] -> Cmd ()
+push_n xs = liftF (PushN xs ())
 
 pop :: Cmd Elem
 pop = liftF (Pop id)
@@ -265,7 +281,7 @@ peek_nth :: Word32 -> Cmd Elem
 peek_nth n = liftF (PeekNth n id)
 
 stack_size :: Cmd Int
-stack_size = liftF (StackSize id)
+stack_size = liftF (StackDepth id)
 
 -- alt stack
 push_alt :: Elem -> Cmd ()
