@@ -75,43 +75,36 @@ standardScriptFlags = fromEnums
 verifyScript :: Env -> Script -> Script -> Maybe InterpreterError
 verifyScript e sigScript pubKeyScript
   | get VERIFY_SIGPUSHONLY fs && not (isPushOnly sigScript) = Just SigPushOnly
-  | error_sig /= Nothing = error_sig
-  | error_pubkey /= Nothing = error_pubkey
+  | error_sig /= Nothing                    = error_sig
+  | error_pubkey /= Nothing                 = error_pubkey
   | empty_or_0_top (stack env_after_pubkey) = Just EvalFalse
-  | check_P2SH = if error_P2SH /= Nothing
-    then error_P2SH
-    else maybe Nothing checkCleanStack maybe_env_after_pubkey2
-  | otherwise = checkCleanStack env_after_pubkey
+  | not (check_P2SH && isP2SH pubKeyScript) = checkCleanStack env_after_pubkey
+  | not (isPushOnly sigScript)              = Just SigPushOnly
+  | error_pubkey2 /= Nothing                = error_pubkey2
+  | empty_or_0_top (stack env_after_pubkey2) = Just EvalFalse
+  | otherwise                               = checkCleanStack env_after_pubkey2
  where
   fs = put VERIFY_STRICTENC (get ENABLE_SIGHASH_FORKID flags) flags
     where flags = script_flags e
-  genesis                    = get UTXO_AFTER_GENESIS fs
-  env                        = flags_equal fs e
-  (env_after_sig, error_sig) = interpretWith $ script_equal sigScript env
-  (env_after_pubkey, error_pubkey) =
-    interpretWith $ env { script = scriptOps pubKeyScript }
-  maybe_env_after_pubkey2 = go <$> maybe_pubKey2   where
-    go pubKey2 = fst $ interpretWith $ env { script = scriptOps pubKey2
-                                           , stack  = stackCopy
-                                           }
-  stackCopy =
-    stack $ if get VERIFY_P2SH fs && not genesis then env_after_sig else env
+  genesis = get UTXO_AFTER_GENESIS fs
+  env     = flags_equal fs e
+  go env script = interpretWith $ script_equal script env
+  (env_after_sig    , error_sig    ) = go env sigScript
+  (env_after_pubkey , error_pubkey ) = go env pubKeyScript
+  (env_after_pubkey2, error_pubkey2) = case Seq.viewr $ stack e' of
+    rest Seq.:> x ->
+      either (const (e', Just VerifyScriptAssertion)) (go $ stack_equal rest e')
+        $ S.decode x
+    _ -> (e', Just VerifyScriptAssertion)
+    where e' = if check_P2SH then env_after_sig else env
   empty_or_0_top s = case Seq.viewr s of
     _ Seq.:> x -> isZero x
     _          -> True
-  check_P2SH = get VERIFY_P2SH fs && not genesis && isP2SH pubKeyScript
-  error_P2SH = if isPushOnly sigScript
-    then maybe (Just VerifyScriptAssertion)
-               (ifso (Just EvalFalse) . empty_or_0_top . stack)
-               maybe_env_after_pubkey2
-    else Just SigPushOnly
-  checkCleanStack final_env = ifso f (get VERIFY_CLEANSTACK fs)   where
-    f | not (get VERIFY_P2SH fs)      = Just VerifyScriptAssertion
-      | length (stack final_env) /= 1 = Just CleanStack
-      | otherwise                     = Nothing
-  maybe_pubKey2 = case Seq.viewr stackCopy of
-    _ Seq.:> x -> either (const Nothing) Just $ S.decode x
-    _          -> Nothing
+  check_P2SH = get VERIFY_P2SH fs && not genesis
+  checkCleanStack final_env
+    | not (get VERIFY_CLEANSTACK fs) = Nothing
+    | not (get VERIFY_P2SH fs) = Just VerifyScriptAssertion
+    | otherwise = ifso (Just CleanStack) $ length (stack final_env) /= 1
 
 interpretWith :: Env -> (Env, Maybe InterpreterError)
 interpretWith env = go (script env) env where

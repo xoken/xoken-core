@@ -193,19 +193,15 @@ interpretCmd = go where
       x Seq.:< rest -> go (k x) (e { alt_stack = rest })
       _             -> (e, Error InvalidAltstackOperation)
     -- branch stack
-    PushBranch b m -> go
-      m
-      (e { branch_stack    = b Seq.<| branch_stack e
-         , failed_branches = failed_branches e + truth (not $ satisfied b)
-         }
-      )
+    PushBranch b m -> go m $ e
+      { branch_stack    = b Seq.<| branch_stack e
+      , failed_branches = failed_branches e + truth (not $ satisfied b)
+      }
     PopBranch k -> case Seq.viewl (branch_stack e) of
-      b Seq.:< rest -> go
-        (k b)
-        (e { branch_stack    = rest
-           , failed_branches = failed_branches e - truth (not $ satisfied b)
-           }
-        )
+      b Seq.:< rest -> go (k b) $ e
+        { branch_stack    = rest
+        , failed_branches = failed_branches e - truth (not $ satisfied b)
+        }
       _ -> (e, Error UnbalancedConditional)
     -- num
     Num2u32 n k -> if n >= 0 && n <= fromIntegral (maxBound :: Word32)
