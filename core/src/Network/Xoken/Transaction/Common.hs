@@ -272,7 +272,7 @@ makeCoinbaseTx ht =
     let txin = TxIn nullOutPoint inputBS maxBound
         txout = TxOut 5000000000 (encodeOutputBS output)
         inputBS = 
-          makeCoinbaseMsg ht
+          makeCoinbaseMsg $ fromIntegral ht
         output =
           PayPK $
           fromString $
@@ -280,7 +280,7 @@ makeCoinbaseTx ht =
           "649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f"
     in Tx 2 [txin] [txout] 0
 
-makeCoinbaseMsg :: Word32 -> ByteString
-makeCoinbaseMsg ht = runPut $ putWord8 5 >> putWord8 (ceiling $ (fromIntegral $ numBits ht)/8) >> putWord32le (ht)
-
-numBits n = snd $ head $ filter (\x->2<=(fst x)) $ iterate (\(x,p) -> (x*2,p+1)) (1,0)
+makeCoinbaseMsg :: Word64 -> ByteString
+makeCoinbaseMsg ht = let msg = runPut $ putWord8 (fromIntegral $ getVarIntBytesUsed ht) >> putVarInt ht
+                         pf = B.length msg
+                     in runPut $ putWord8 (fromIntegral pf) >> put msg
