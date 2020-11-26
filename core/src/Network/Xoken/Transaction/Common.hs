@@ -27,6 +27,8 @@ module Network.Xoken.Transaction.Common
     , nullOutPoint
     , genesisTx
     , makeCoinbaseTx
+    , makeCoinbaseMsg
+    , putBlockHeight
     ) where
 
 import qualified Codec.Serialise as CBOR
@@ -281,6 +283,29 @@ makeCoinbaseTx ht =
     in Tx 2 [txin] [txout] 0
 
 makeCoinbaseMsg :: Word64 -> ByteString
-makeCoinbaseMsg ht = let msg = runPut $ putVarInt ht
-                         pf = B.length msg
-                     in runPut $ putWord8 (fromIntegral pf) >> put msg
+makeCoinbaseMsg ht =
+    let height = runPut $ putBlockHeight ht
+    in runPut $ put $ VarString height
+
+putBlockHeight x
+        | x <= 0xff = do
+            --putWord8 0x02
+            putWord8 0x01
+            putWord8 $ fromIntegral x
+        | x <= 0xffff = do
+            --putWord8 0x03
+            putWord8 0x02
+            putWord16le $ fromIntegral x
+        | x <= 0xffffff = do
+            --putWord8 0x03
+            let w24 = B.init $ runPut $ putWord32le $ fromIntegral x
+            putWord8 0x03
+            putByteString w24
+        | x <= 0xffffffff = do
+            --putWord8 0x05
+            putWord8 0x04
+            putWord32le $ fromIntegral x
+        | otherwise = do
+            --putWord8 0x09
+            putWord8 0x08
+            putWord64le $ fromIntegral x
