@@ -281,6 +281,6 @@ makeCoinbaseTx ht =
     in Tx 2 [txin] [txout] 0
 
 makeCoinbaseMsg :: Word64 -> ByteString
-makeCoinbaseMsg ht = let msg = runPut $ putWord8 (fromIntegral $ getVarIntBytesUsed ht) >> putVarInt ht
+makeCoinbaseMsg ht = let msg = runPut $ putVarInt ht
                          pf = B.length msg
                      in runPut $ putWord8 (fromIntegral pf) >> put msg
