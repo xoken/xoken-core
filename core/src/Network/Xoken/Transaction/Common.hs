@@ -26,6 +26,7 @@ module Network.Xoken.Transaction.Common
     , nosigTxHash
     , nullOutPoint
     , genesisTx
+    , makeCoinbaseTx
     ) where
 
 import qualified Codec.Serialise as CBOR
@@ -265,3 +266,21 @@ genesisTx = Tx 1 [txin] [txout] locktime
         "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb" ++
         "649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f"
     z = "0000000000000000000000000000000000000000000000000000000000000000"
+
+makeCoinbaseTx :: Word32 -> Tx
+makeCoinbaseTx ht = 
+    let txin = TxIn nullOutPoint inputBS maxBound
+        txout = TxOut 5000000000 (encodeOutputBS output)
+        inputBS = 
+          makeCoinbaseMsg ht
+        output =
+          PayPK $
+          fromString $
+          "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb" ++
+          "649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f"
+    in Tx 2 [txin] [txout] 0
+
+makeCoinbaseMsg :: Word32 -> ByteString
+makeCoinbaseMsg ht = runPut $ putWord8 5 >> putWord8 (ceiling $ (fromIntegral $ numBits ht)/8) >> putWord32le (ht)
+
+numBits n = snd $ head $ filter (\x->2<=(fst x)) $ iterate (\(x,p) -> (x*2,p+1)) (1,0)
