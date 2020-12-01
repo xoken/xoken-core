@@ -149,7 +149,7 @@ instance Serialize CompactBlock where
         putCompactSize sidlen
         forM_ sids putCBShortTxID
         putCompactSize pftxlen
-        put (toDiffIndices pftxns)
+        forM_ (toDiffIndices pftxns) put
 
 -- | The "high-bandwidth" mode, is enabled by setting the first boolean to 1 in a sendcmpct message.
 -- | The "low-bandwidth" mode is enabled by setting the first boolean to 0 
