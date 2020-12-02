@@ -100,6 +100,7 @@ library
     , monad-loops
     , serialise
     , free
+    , siphash
   default-language: Haskell2010
 
 test-suite spec
@@ -188,5 +189,6 @@ test-suite spec
     , transformers
     , conduit
     , free
+    , siphash
   default-language: Haskell2010
   build-tool-depends: hspec-discover:hspec-discover

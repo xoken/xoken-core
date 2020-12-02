@@ -22,9 +22,11 @@ module Network.Xoken.Network.CompactBlock
 
 import qualified Codec.Serialise as CBOR
 import Control.Monad (forM_, liftM2, mzero, replicateM)
+import Crypto.MAC.SipHash
 import Data.Aeson (FromJSON, ToJSON, Value(String), parseJSON, toJSON, withText)
 import Data.Bits ((.&.), (.|.), shiftL, shiftR)
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as C
 import Data.Char (chr, ord)
 import Data.Hashable (Hashable)
 import Data.Maybe (fromMaybe)
@@ -103,6 +105,28 @@ encodeCBWord64 x = B.pack $ map fromIntegral wl
         , (x .&. 0xFF00000000) `shiftR` 32
         , (x .&. 0xFF0000000000) `shiftR` 40
         ]
+
+getCompactBlockSipKey :: BlockHash -> Word64 -> SipKey 
+getCompactBlockSipKey bhash nn = 
+    let keyhash = sha256 $ encode bhash `C.append` encode nn
+        bs = encode keyhash
+        k0 =
+            case runGet getWord64le bs of
+                Left e -> Prelude.error e
+                Right a -> a
+        k1 =
+            case runGet getWord64le $ B.drop 8 bs of
+                Left e -> Prelude.error e
+                Right a -> a
+    in SipKey k0 k1
+
+txHashToShortId :: BlockHash -> Word64 -> TxHash -> Word64
+txHashToShortId bhash nn txid = txHashToShortId' txid (getCompactBlockSipKey bhash nn)
+
+txHashToShortId' :: TxHash -> SipKey -> Word64
+txHashToShortId' txid skey = 
+    let (SipHash val) = hashWith 2 4 skey $ encode txid
+    in val
 
 -- | A PrefilledTx structure is used in HeaderAndShortIDs to provide a list of a few transactions explicitly.
 data PrefilledTx =
