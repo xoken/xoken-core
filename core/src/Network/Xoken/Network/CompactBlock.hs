@@ -18,6 +18,9 @@ module Network.Xoken.Network.CompactBlock
     , BlockTxns(..)
     , DiffIndexed(..)
     , PrefilledTx(..)
+    , getCompactBlockSipKey
+    , txHashToShortId
+    , txHashToShortId'
     ) where
 
 import qualified Codec.Serialise as CBOR
@@ -126,7 +129,7 @@ txHashToShortId bhash nn txid = txHashToShortId' txid (getCompactBlockSipKey bha
 txHashToShortId' :: TxHash -> SipKey -> Word64
 txHashToShortId' txid skey = 
     let (SipHash val) = hashWith 2 4 skey $ encode txid
-    in val
+    in val .&. 0x0000FFFFFFFFFFFF
 
 -- | A PrefilledTx structure is used in HeaderAndShortIDs to provide a list of a few transactions explicitly.
 data PrefilledTx =
