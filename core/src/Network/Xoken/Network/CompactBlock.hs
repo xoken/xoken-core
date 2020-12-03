@@ -109,9 +109,9 @@ encodeCBWord64 x = B.pack $ map fromIntegral wl
         , (x .&. 0xFF0000000000) `shiftR` 40
         ]
 
-getCompactBlockSipKey :: BlockHash -> Word64 -> SipKey 
-getCompactBlockSipKey bhash nn = 
-    let keyhash = sha256 $ encode bhash `C.append` encode nn
+getCompactBlockSipKey :: BlockHeader -> Word64 -> SipKey 
+getCompactBlockSipKey hdr nn = 
+    let keyhash = sha256 $ encode hdr `C.append` (runPut $ putWord64le nn)
         bs = encode keyhash
         k0 =
             case runGet getWord64le bs of
@@ -123,8 +123,11 @@ getCompactBlockSipKey bhash nn =
                 Right a -> a
     in SipKey k0 k1
 
-txHashToShortId :: BlockHash -> Word64 -> TxHash -> Word64
-txHashToShortId bhash nn txid = txHashToShortId' txid (getCompactBlockSipKey bhash nn)
+txHashToShortId :: BlockHeader -> Word64 -> TxHash -> Word64
+txHashToShortId hdr nn txid = txHashToShortId' txid (getCompactBlockSipKey hdr nn)
+
+txHashesToShortIds :: BlockHeader -> Word64 -> [TxHash] -> Word64
+txHashesToShortIds hdr nn txids = let skey = getCompactBlockSipKey hdr nn in fmap (\txid -> txHashToShortId' txid skey)
 
 txHashToShortId' :: TxHash -> SipKey -> Word64
 txHashToShortId' txid skey = 
@@ -164,7 +167,7 @@ data CompactBlock =
 instance Serialize CompactBlock where
     get = do
         header <- get
-        nonce <- get
+        nonce <- getWord64le
         (CompactSize sidlen) <- get
         sids <- replicateM (fromIntegral sidlen) getCBShortTxID
         (CompactSize pftxlen) <- get
@@ -172,7 +175,7 @@ instance Serialize CompactBlock where
         return $ CompactBlock header nonce sidlen sids pftxlen (fromDiffIndices pftxns)
     put (CompactBlock header nonce sidlen sids pftxlen pftxns) = do
         put header
-        put nonce
+        putWord64le nonce
         putCompactSize sidlen
         forM_ sids putCBShortTxID
         putCompactSize pftxlen
