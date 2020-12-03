@@ -283,9 +283,7 @@ makeCoinbaseTx ht =
     in Tx 2 [txin] [txout] 0
 
 makeCoinbaseMsg :: Word64 -> ByteString
-makeCoinbaseMsg ht =
-    let height = runPut $ putBlockHeight ht
-    in runPut $ put $ VarString height
+makeCoinbaseMsg ht = runPut $ putBlockHeight ht
 
 putBlockHeight x
         | x <= 0xff = do
