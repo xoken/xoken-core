@@ -9,9 +9,11 @@ Portability : POSIX
 Transactions and related code.
 -}
 module Network.Xoken.Transaction
-    ( module Common
-    , module Builder
-    ) where
+  ( module Common
+  , module Builder
+  , module Coinbase
+  ) where
 
 import Network.Xoken.Transaction.Builder as Builder
+import Network.Xoken.Transaction.Coinbase as Coinbase
 import Network.Xoken.Transaction.Common as Common
