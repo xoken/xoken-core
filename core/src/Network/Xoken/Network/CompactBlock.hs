@@ -126,8 +126,8 @@ getCompactBlockSipKey hdr nn =
 txHashToShortId :: BlockHeader -> Word64 -> TxHash -> Word64
 txHashToShortId hdr nn txid = txHashToShortId' txid (getCompactBlockSipKey hdr nn)
 
-txHashesToShortIds :: BlockHeader -> Word64 -> [TxHash] -> Word64
-txHashesToShortIds hdr nn txids = let skey = getCompactBlockSipKey hdr nn in fmap (\txid -> txHashToShortId' txid skey)
+txHashesToShortIds :: BlockHeader -> Word64 -> [TxHash] -> [Word64]
+txHashesToShortIds hdr nn txids = let skey = getCompactBlockSipKey hdr nn in fmap (\txid -> txHashToShortId' txid skey) txids
 
 txHashToShortId' :: TxHash -> SipKey -> Word64
 txHashToShortId' txid skey = 
