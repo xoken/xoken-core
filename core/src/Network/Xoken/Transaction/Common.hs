@@ -26,9 +26,6 @@ module Network.Xoken.Transaction.Common
     , nosigTxHash
     , nullOutPoint
     , genesisTx
-    , makeCoinbaseTx
-    , makeCoinbaseMsg
-    , putBlockHeight
     ) where
 
 import qualified Codec.Serialise as CBOR
@@ -269,41 +266,4 @@ genesisTx = Tx 1 [txin] [txout] locktime
         "649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f"
     z = "0000000000000000000000000000000000000000000000000000000000000000"
 
-makeCoinbaseTx :: Word32 -> Tx
-makeCoinbaseTx ht = 
-    let txin = TxIn nullOutPoint inputBS maxBound
-        txout = TxOut 5000000000 (encodeOutputBS output)
-        inputBS = 
-          makeCoinbaseMsg $ fromIntegral ht
-        output =
-          PayPK $
-          fromString $
-          "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb" ++
-          "649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f"
-    in Tx 2 [txin] [txout] 0
 
-makeCoinbaseMsg :: Word64 -> ByteString
-makeCoinbaseMsg ht = runPut $ putBlockHeight ht
-
-putBlockHeight x
-        | x <= 0xff = do
-            --putWord8 0x02
-            putWord8 0x01
-            putWord8 $ fromIntegral x
-        | x <= 0xffff = do
-            --putWord8 0x03
-            putWord8 0x02
-            putWord16le $ fromIntegral x
-        | x <= 0xffffff = do
-            --putWord8 0x03
-            let w24 = B.init $ runPut $ putWord32le $ fromIntegral x
-            putWord8 0x03
-            putByteString w24
-        | x <= 0xffffffff = do
-            --putWord8 0x05
-            putWord8 0x04
-            putWord32le $ fromIntegral x
-        | otherwise = do
-            --putWord8 0x09
-            putWord8 0x08
-            putWord64le $ fromIntegral x

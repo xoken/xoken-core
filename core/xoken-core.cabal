@@ -64,6 +64,7 @@ library
       Network.Xoken.Test.Transaction
       Network.Xoken.Test.Util
       Network.Xoken.Transaction.Builder
+      Network.Xoken.Transaction.Coinbase
       Network.Xoken.Script.Interpreter
       Paths_xoken_core
       
