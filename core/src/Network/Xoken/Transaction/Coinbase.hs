@@ -25,10 +25,10 @@ import Data.Word (Word32, Word64)
 import Network.Xoken.Address
 import Network.Xoken.Transaction.Common
 
-makeCoinbaseTx :: Word32 -> Address -> Tx
-makeCoinbaseTx ht addr =
+makeCoinbaseTx :: Word32 -> Address -> Word64 -> Tx
+makeCoinbaseTx ht addr amt =
   let txin = TxIn nullOutPoint inputBS maxBound
-      txout = TxOut 5000000000 (addressToScriptBS addr)
+      txout = TxOut amt (addressToScriptBS addr)
       inputBS = makeCoinbaseMsg $ fromIntegral ht
    in Tx 2 [txin] [txout] 0
 
