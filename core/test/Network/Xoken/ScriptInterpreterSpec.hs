@@ -3,6 +3,7 @@ module Network.Xoken.ScriptInterpreterSpec
   )
 where
 
+import           Data.Bits (shiftL, shiftR)
 import           Data.Foldable                  ( toList )
 import           Data.List                      ( intercalate )
 import           Data.Word                      ( Word8
@@ -46,6 +47,12 @@ interpret = interpretWith . env
 
 spec :: Spec
 spec = do
+  describe "interpreter dependencies" $ do
+    it "still has wrong shiftR" $
+      (BS.pack [1,2,3] `shiftR` 8) `shouldBe` (BS.pack [0,2,3])
+    it "shifts with fixed_shiftR" $ do
+      (BS.pack [1,2,3] `fixed_shiftR` 8) `shouldBe` (BS.pack [0,1,2])
+      (BS.pack [1,2,3] `shiftL` 8) `shouldBe` (BS.pack [2,3,0])
   describe "pushdata" $ do
     let opcode_xs  = BS.pack $ replicate 0x4b 1
         opdata1_xs = BS.pack $ replicate 0xff 1
@@ -258,7 +265,7 @@ spec = do
         then const (`shouldBe` Just ModByZero)
         else success_with_elem_check $ num_check (`shouldBe` [a `mod` b])
     it "performs OP_LSHIFT on arbitrary data" $ test_shift OP_LSHIFT B.shiftL
-    it "performs OP_RSHIFT on arbitrary data" $ test_shift OP_RSHIFT B.shiftR
+    it "performs OP_RSHIFT on arbitrary data" $ test_shift OP_RSHIFT fixed_shiftR
     it "performs OP_BOOLAND on arbitrary data"
       $ binary_arith_success OP_BOOLAND (\a b -> truth (a /= 0 && b /= 0))
     it "performs OP_BOOLOR on arbitrary data"

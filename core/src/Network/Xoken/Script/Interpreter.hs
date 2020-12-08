@@ -44,6 +44,23 @@ import           Network.Xoken.Script.SigHash
 import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.Util
 
+fixed_shiftR :: BS.ByteString -> Int -> BS.ByteString
+fixed_shiftR bs 0 = bs
+fixed_shiftR bs i
+    | i `mod` 8 == 0 =
+      BS.take (BS.length bs) $ BS.append
+        (BS.replicate (i `div` 8) 0)
+        (BS.take (BS.length bs - (i `div` 8)) bs)
+    | i `mod` 8 /= 0 =
+      BS.pack $ take (BS.length bs)
+        $ (replicate (i `div` 8) (0 :: Word8))
+        ++ (go (i `mod` 8) 0 $ BS.unpack (BS.take (BS.length bs - (i `div` 8)) bs))
+  where
+  go _ _ [] = []
+  go j w1 (w2:wst) = (maskR j w1 w2) : go j w2 wst
+  maskR j w1 w2 = (shiftL w1 (8-j)) .|. (shiftR w2 j)
+{-# INLINE fixed_shiftR #-}
+
 maxScriptElementSizeBeforeGenesis = 520
 sequenceLocktimeDisableFlag = 2 ^ 31
 
@@ -258,7 +275,7 @@ opcode OP_DIV       = pop_n 2 >>= arith >>= \[x1, x2] ->
 opcode OP_MOD = pop_n 2 >>= arith >>= \[x1, x2] ->
   if x2 == 0 then terminate ModByZero else push $ bin (x1 `mod` x2)
 opcode OP_LSHIFT         = shift shiftL
-opcode OP_RSHIFT         = shift shiftR
+opcode OP_RSHIFT         = shift fixed_shiftR
 opcode OP_BOOLAND        = binaryarith (\a b -> truth (a /= 0 && b /= 0))
 opcode OP_BOOLOR         = binaryarith (\a b -> truth (a /= 0 || b /= 0))
 opcode OP_NUMEQUAL       = binaryarith (btruth (==))
@@ -352,14 +369,15 @@ bin = num2bin
 
 shift :: (Elem -> Int -> Elem) -> Cmd ()
 shift f = pop_n 2 >>= \[x1, x2] -> do
+  let size = BS.length x1
   n <- num' x2
   if n < 0
     then terminate InvalidNumberRange
-    else if n >= fromIntegral (BS.length x1) * 8
-      then push (BS.replicate (BS.length x1) 0)
+    else push $ if n >= fromIntegral size * 8
+      then BS.replicate size 0
       else go x1 n
  where
-  go x n | n <= max  = push $ f x $ fromIntegral n
+  go x n | n <= max  = f x $ fromIntegral n
          | otherwise = go (f x maxInt) (n - max)
   maxInt = maxBound :: Int
   max    = fromIntegral maxInt
