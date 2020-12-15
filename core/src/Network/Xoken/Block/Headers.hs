@@ -76,7 +76,7 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Hashable
 import Data.List (sort, sortBy, (!!))
-import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Maybe (fromMaybe, fromJust, listToMaybe)
 import Data.Serialize as S (Serialize(..), decode, encode, get, put)
 import Data.Serialize.Get as S
 import Data.Serialize.Put as S
@@ -437,6 +437,11 @@ validVersion net height version
     | version < 4 = height < getBip65Height net
     | otherwise = True
 
+-- | Returns true if block height is equal to or greater than DAA block height
+-- for given network.
+isDaaEnabled :: Network -> BlockNode -> Bool
+isDaaEnabled net par = nodeHeight par >= (fromJust $ getDaaBlockHeight net)
+
 -- | Find last block with normal, as opposed to minimum difficulty (for test
 -- networks).
 lastNoMinDiff :: BlockHeaders m => Network -> BlockNode -> m BlockNode
@@ -557,6 +562,18 @@ nextPowWorkRequired net par bh
     pt = blockTimestamp $ nodeHeader par
     ht = blockTimestamp bh
     delta = getTargetSpacing net * 2
+
+getNextWorkRequired ::
+     BlockHeaders m => Network -> BlockNode -> BlockHeader -> m Word32
+getNextWorkRequired net par bh =
+  case par of
+    GenesisNode {..} -> return $ encodeCompact $ getPowLimit net
+    BlockNode {..} ->
+        if getPowNoRetargetting net
+            then return $ blockBits nodeHeader
+            else if isDaaEnabled net par
+                    then nextDaaWorkRequired net par bh
+                    else nextEdaWorkRequired net par bh
 
 -- | Computes the work required for the first block in a new retarget period.
 calcNextWork ::
