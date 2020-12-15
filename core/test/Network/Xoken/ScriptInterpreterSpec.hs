@@ -30,20 +30,12 @@ import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.Util
 import           Network.Xoken.Test
 
-sigChecker :: BaseSignatureChecker
-sigChecker = txSigChecker net txTo nIn amount inputIndex where
-  net        = undefined
-  txTo       = undefined
-  nIn        = undefined
-  amount     = undefined
-  inputIndex = undefined
-
 default_ctx = Ctx
-  { script_flags = fromEnums [GENESIS, UTXO_AFTER_GENESIS, VERIFY_MINIMALIF]
-                   .|. mandatoryScriptFlags
-                   .|. standardScriptFlags
-  , consensus = True
-  , base_signature_checker = sigChecker
+  { script_flags     = fromEnums [GENESIS, UTXO_AFTER_GENESIS, VERIFY_MINIMALIF]
+                       .|. mandatoryScriptFlags
+                       .|. standardScriptFlags
+  , consensus        = True
+  , sig_checker_data = undefined
   }
 
 opPush = opPushData . rawNumToBS
@@ -51,8 +43,8 @@ opPush = opPushData . rawNumToBS
 spec :: Spec
 spec = do
   describe "verify script" $ do
-    it "empty scripts" $ do
-      verifyScriptWith default_ctx empty_env (Script []) (Script [])
+    it "empty scripts" $ forAll arbitrary $ \ctx ->
+      verifyScriptWith ctx empty_env (Script []) (Script [])
         `shouldBe` Just EvalFalse
   describe "interpreter dependencies" $ do
     it "still has wrong shiftR"
@@ -90,32 +82,29 @@ spec = do
     testPack [] [OP_PUSHDATA opdata2_xs OPDATA2] [BS.unpack opdata2_xs]
     terminatesWith MinimalData [OP_PUSHDATA opdata2_xs OPDATA4]
   describe "stack" $ do
-    it "performs OP_TOALTSTACK on arbitrary data"
-      $ property
-      $ forAll (listOf arbitraryBS)
-      $ \elems -> forAll (listOf arbitraryBS) $ \alt_elems ->
-          forAll arbitraryBS $ \bs ->
+    it "performs OP_TOALTSTACK on arbitrary data" $ forAll arbitrary $ \ctx ->
+      forAll (listOf arbitraryBS) $ \elems ->
+        forAll (listOf arbitraryBS) $ \alt_elems -> forAll arbitraryBS $ \bs ->
+          test_script_with
+              ctx
+              ( stack_equal (Seq.fromList $ elems ++ [bs])
+              . alt_stack_equal (Seq.fromList alt_elems)
+              )
+              [OP_TOALTSTACK]
+            $ success_with_alt_elem_check (`shouldBe` bs : alt_elems)
+    it "performs OP_FROMALTSTACK on arbitrary data"
+      $ forAll arbitrary
+      $ \ctx -> forAll (listOf arbitraryBS) $ \elems ->
+          forAll (listOf arbitraryBS) $ \alt_elems ->
             test_script_with
-                default_ctx
-                ( stack_equal (Seq.fromList $ elems ++ [bs])
+                ctx
+                ( stack_equal (Seq.fromList elems)
                 . alt_stack_equal (Seq.fromList alt_elems)
                 )
-                [OP_TOALTSTACK]
-              $ success_with_alt_elem_check
-              $ (`shouldBe` bs : alt_elems)
-    it "performs OP_FROMALTSTACK on arbitrary data"
-      $ property
-      $ forAll (listOf arbitraryBS)
-      $ \elems -> forAll (listOf arbitraryBS) $ \alt_elems ->
-          test_script_with
-              default_ctx
-              ( stack_equal (Seq.fromList elems)
-              . alt_stack_equal (Seq.fromList $ alt_elems)
-              )
-              [OP_FROMALTSTACK]
-            $ case alt_elems of
-                x : _ -> success_with_elem_check (`shouldBe` elems ++ [x])
-                _     -> const (`shouldBe` Just InvalidAltstackOperation)
+                [OP_FROMALTSTACK]
+              $ case alt_elems of
+                  x : _ -> success_with_elem_check (`shouldBe` elems ++ [x])
+                  _     -> const (`shouldBe` Just InvalidAltstackOperation)
     arrange_test OP_2DROP 2 (\[a, b] -> [])
     arrange_test OP_2DUP  2 (\[a, b] -> [a, b, a, b])
     arrange_test OP_3DUP  3 (\[a, b, c] -> [a, b, c, a, b, c])
@@ -123,21 +112,16 @@ spec = do
     arrange_test OP_2ROT  6 (\[a, b, c, d, e, f] -> [c, d, e, f, a, b])
     arrange_test OP_2SWAP 4 (\[a, b, c, d] -> [c, d, a, b])
     arrange_test OP_IFDUP 1 (\[a] -> if num a /= 0 then [a, a] else [a])
-    it "performs OP_DEPTH on arbitrary data"
-      $ property
-      $ forAll (listOf arbitraryBS)
-      $ \elems ->
-          test_script_with default_ctx
-                           (stack_equal $ Seq.fromList elems)
-                           [OP_DEPTH]
-            $ success_with_elem_check
-            $ (`shouldBe` elems ++ [int2BS $ length elems])
+    it "performs OP_DEPTH on arbitrary data" $ forAll arbitrary $ \ctx ->
+      forAll (listOf arbitraryBS) $ \elems ->
+        test_script_with ctx (stack_equal $ Seq.fromList elems) [OP_DEPTH]
+          $ success_with_elem_check
+              (`shouldBe` elems ++ [int2BS $ length elems])
     arrange_test OP_DROP 1 (\[a] -> [])
     arrange_test OP_DUP  1 (\[a] -> [a, a])
     arrange_test OP_NIP  2 (\[a, b] -> [b])
     arrange_test OP_OVER 2 (\[a, b] -> [a, b, a])
     it "performs OP_PICK on arbitrary data"
-      $ property
       $ forAll (listOf arbitraryBS)
       $ \elems -> forAll (arbitrary :: Gen Word32) $ \i -> do
           let n = fromIntegral i
@@ -149,7 +133,6 @@ spec = do
                   (`shouldBe` elems ++ [elems !! (length elems - 1 - n)])
                 else const (`shouldBe` Just StackUnderflow)
     it "performs OP_ROLL on arbitrary data"
-      $ property
       $ forAll (listOf arbitraryBS)
       $ \xs -> forAll (arbitrary :: Gen Word32) $ \i -> do
           let n = fromIntegral i
@@ -177,16 +160,12 @@ spec = do
     test [OP_1, OP_IF, OP_1, OP_ELSE, OP_IF, OP_ENDIF, OP_ENDIF] [1]
     test [OP_RETURN, OP_ELSE]                         []
     testNoFlags (Just OpReturn) [OP_RETURN]
-    it "handles double else branch" $ forAll arbitrary $ \genesis_flag ->
-      test_script_with
-          (flag_equal UTXO_AFTER_GENESIS genesis_flag default_ctx)
-          id
-          [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
-        $ const
-            (`shouldBe` if genesis_flag
-              then Just UnbalancedConditional
-              else Nothing
-            )
+    it "handles double else branch" $ forAll arbitrary $ \ctx ->
+      test_script_with ctx id [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF] $ const
+        (`shouldBe` if get UTXO_AFTER_GENESIS (script_flags ctx)
+          then Just UnbalancedConditional
+          else Nothing
+        )
     terminatesWith UnbalancedConditional [OP_IF]
     terminatesWith UnbalancedConditional [OP_ELSE]
     terminatesWith UnbalancedConditional [OP_ENDIF]
@@ -208,36 +187,32 @@ spec = do
   describe "Data manipulation" $ do
     n_bs_test OP_CAT 2 $ \elems [bs1, bs2] ->
       success_with_elem_check (`shouldBe` elems ++ [BS.append bs1 bs2])
-    it "performs OP_SPLIT on arbitrary data"
-      $ property
-      $ forAll arbitraryBS
-      $ \bs -> forAll arbitraryIntScriptOp $ \n_op -> case scriptOpToInt n_op of
-          Right n ->
-            test_script [opPushData bs, n_op, OP_SPLIT]
-              $ if n < 0 || n > BS.length bs
-                  then const (`shouldBe` Just InvalidSplitRange)
-                  else success_with_elem_check (`shouldBe` [bs1, bs2])
-            where (bs1, bs2) = BS.splitAt n bs
-          _ -> pure ()
-    it "performs OP_NUM2BIN on arbitrary data"
-      $ property
-      $ forAll arbitraryBN
-      $ \bn -> forAll arbitraryBN $ \size ->
-          test_script_with default_ctx
-                           (stack_equal $ Seq.fromList $ bin <$> [bn, size])
-                           [OP_NUM2BIN]
-            $ \env error -> do
-                let
-                  genesis = get UTXO_AFTER_GENESIS $ script_flags default_ctx
-                  tooBig =
-                    not genesis
-                      && size
-                      >  fromIntegral maxScriptElementSizeBeforeGenesis
-                if size < 0 || size > fromIntegral (maxBound :: Int) || tooBig
-                  then error `shouldBe` Just PushSize
-                  else case num2binpad bn (fromIntegral size) of
-                    Just x -> pure () -- elems env `shouldBe` [x]
-                    _      -> error `shouldBe` Just ImpossibleEncoding
+    it "performs OP_SPLIT on arbitrary data" $ forAll arbitraryBS $ \bs ->
+      forAll arbitraryIntScriptOp $ \n_op -> case scriptOpToInt n_op of
+        Right n ->
+          test_script [opPushData bs, n_op, OP_SPLIT]
+            $ if n < 0 || n > BS.length bs
+                then const (`shouldBe` Just InvalidSplitRange)
+                else success_with_elem_check (`shouldBe` [bs1, bs2])
+          where (bs1, bs2) = BS.splitAt n bs
+        _ -> pure ()
+    it "performs OP_NUM2BIN on arbitrary data" $ forAll arbitrary $ \ctx ->
+      forAll arbitrary $ \bn -> forAll arbitrary $ \size ->
+        test_script_with ctx
+                         (stack_equal $ Seq.fromList $ bin <$> [bn, size])
+                         [OP_NUM2BIN]
+          $ \env error -> do
+              let
+                genesis = get UTXO_AFTER_GENESIS $ script_flags ctx
+                tooBig =
+                  not genesis
+                    && size
+                    >  fromIntegral maxScriptElementSizeBeforeGenesis
+              if size < 0 || size > fromIntegral (maxBound :: Int) || tooBig
+                then error `shouldBe` Just PushSize
+                else case num2binpad bn (fromIntegral size) of
+                  Just x -> pure () -- elems env `shouldBe` [x]
+                  _      -> error `shouldBe` Just ImpossibleEncoding
     arrange_test OP_BIN2NUM 1 (\[a] -> [bin $ num $ a])
     arrange_test OP_SIZE    1 (\[a] -> [a, int2BS $ BS.length a])
   describe "Bitwise logic" $ do
@@ -308,7 +283,6 @@ spec = do
     it "performs OP_MIN on arbitrary data" $ binary_arith_success OP_MIN min
     it "performs OP_MAX on arbitrary data" $ binary_arith_success OP_MAX max
     it "performs OP_WITHIN on arbitrary data"
-      $ property
       $ forAll arbitraryPushOp
       $ \x_op -> forAll arbitraryPushOp $ \min_op ->
           forAll arbitraryPushOp $ \max_op ->
@@ -346,7 +320,6 @@ arrange_test op n f = n_bs_test op n
 
 n_bs_test op n f =
   it ("performs " ++ show op ++ " on arbitrary data")
-    $ property
     $ forAll (listOf arbitraryBS)
     $ \elems -> test_script_with
         default_ctx
@@ -366,12 +339,10 @@ bn_conversion n xs = do
   it ("converts BN " ++ show n) $ do
     bin n `shouldBe` BS.pack xs
     num (BS.pack xs) `shouldBe` n
-  it ("converts limited BN" ++ show n)
-    $ property
-    $ forAll arbitrary
-    $ \max_size -> forAll arbitrary $ \require_minimal ->
-        bin2num' require_minimal max_size (BS.pack xs)
-          `shouldBe` if max_size < length xs then Nothing else Just n
+  it ("converts limited BN" ++ show n) $ forAll arbitrary $ \max_size ->
+    forAll arbitrary $ \require_minimal ->
+      bin2num' require_minimal max_size (BS.pack xs)
+        `shouldBe` if max_size < length xs then Nothing else Just n
 
 test_script = test_script_with default_ctx id
 success_with_elem_check f = success_with_env_check (f . elems)
@@ -380,13 +351,12 @@ success_with_env_check f env error = (error `shouldBe` Nothing) >> f env
 elems = toList . stack
 alt_elems = toList . alt_stack
 num_check f elems = f (num <$> elems)
-arbitraryBN = BN <$> arbitrary
 
-testDisabledOp op = forAll (listOf arbitraryBS) $ \elems ->
-  forAll arbitraryBS $ \bs -> forAll arbitrary $ \flag ->
+testDisabledOp op =
+  forAll (listOf arbitraryBS) $ \elems -> forAll arbitraryBS $ \bs ->
     forAll arbitrary $ \failed -> do
       test_script_with
-          (flag_equal UTXO_AFTER_GENESIS flag default_ctx)
+          default_ctx
           (stack_equal (Seq.fromList elems))
           [ if failed then OP_1 else OP_0
           , OP_IF
@@ -395,17 +365,16 @@ testDisabledOp op = forAll (listOf arbitraryBS) $ \elems ->
           , op
           , OP_ENDIF
           ]
-        $ if flag && failed
+        $ if get UTXO_AFTER_GENESIS (script_flags default_ctx) && failed
             then success_with_elem_check (`shouldBe` elems)
             else const (`shouldBe` Just DisabledOpcode)
 
-arbitraryPushOp =
-  oneof [opPushData . bin <$> arbitraryBN, arbitraryIntScriptOp]
+arbitraryPushOp = oneof [opPushData . bin <$> arbitrary, arbitraryIntScriptOp]
 
 pushOpToBN (OP_PUSHDATA bs _) = Right $ num bs
 pushOpToBN op                 = fromIntegral <$> scriptOpToInt op
 
-unary_arith_success op f = property $ forAll arbitraryPushOp $ \x_op ->
+unary_arith_success op f = forAll arbitraryPushOp $ \x_op ->
   case pushOpToBN x_op of
     Right x -> test_script [x_op, op] $ success_with_elem_check $ num_check
       (`shouldBe` [f x])
@@ -419,22 +388,21 @@ binary_bitwise_test op f = n_bs_test op 2 $ \elems [a, b] ->
 binary_arith_success op f = binary_arith_test op
   $ \a b -> success_with_elem_check $ num_check (`shouldBe` [f a b])
 
-binary_arith_test op f = property $ forAll arbitraryPushOp $ \a_op ->
+binary_arith_test op f = forAll arbitraryPushOp $ \a_op ->
   forAll arbitraryPushOp $ \b_op -> case (pushOpToBN a_op, pushOpToBN b_op) of
     (Right a, Right b) -> test_script [a_op, b_op, op] $ f a b
     _                  -> pure ()
 
-test_shift op f = property $ forAll arbitraryBS $ \bs ->
+test_shift op f = forAll arbitraryBS $ \bs ->
   forAll arbitraryPushOp $ \n_op -> case pushOpToBN n_op of
     Right n -> test_script [opPushData bs, n_op, op] $ if n < 0
       then const (`shouldBe` Just InvalidNumberRange)
-      else
-        success_with_elem_check
-          $ (`shouldBe` [ if fromIntegral n >= size * 8
-                            then BS.pack (replicate size 0)
-                            else f bs (fromIntegral n)
-                        ]
-            )
+      else success_with_elem_check
+        (`shouldBe` [ if fromIntegral n >= size * 8
+                        then BS.pack (replicate size 0)
+                        else f bs (fromIntegral n)
+                    ]
+        )
       where size = BS.length bs
     _ -> pure ()
 
@@ -472,11 +440,13 @@ testNoFlags
   :: Maybe InterpreterError -> [ScriptOp] -> SpecWith (Arg Expectation)
 testNoFlags r ops =
   it ("returns [] given " ++ show ops ++ " and no flags")
-    $          snd
-                 (interpretWith (default_ctx { script_flags = empty })
-                                (script_equal (Script ops) empty_env)
-                 )
-    `shouldBe` r
+    $ forAll arbitrary
+    $ \ctx ->
+        snd
+            (interpretWith (ctx { script_flags = empty })
+                           (script_equal (Script ops) empty_env)
+            )
+          `shouldBe` r
 
 rawNumToBS = BS.reverse . BS.pack . unroll
 hex = toLazyByteString . byteStringHex

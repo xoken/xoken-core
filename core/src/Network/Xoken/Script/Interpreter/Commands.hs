@@ -6,7 +6,6 @@ import           Data.Word                      ( Word32
                                                 , Word64
                                                 )
 import           Data.EnumBitSet                ( get
-                                                , put
                                                 )
 import           Data.Foldable                  ( toList )
 import           Control.Monad.Free             ( Free(Pure, Free)
@@ -130,13 +129,6 @@ data Env = Env
   , op_count               :: Word64
   }
 
-data Ctx = Ctx
-  { script_flags :: ScriptFlags
-  , consensus :: Bool
-  , base_signature_checker :: BaseSignatureChecker
-  }
-
-flag_equal x v c = c { script_flags = put x v (script_flags c) }
 stack_equal x e = e { stack = x }
 alt_stack_equal x e = e { alt_stack = x }
 script_equal x e = e { script = scriptOps x }
@@ -222,7 +214,7 @@ interpretCmd ctx = go where
     -- field access
     Flag f k          -> go (k $ flag f) e
     Flags           k -> go (k $ script_flags ctx) e
-    Checker         k -> go (k $ base_signature_checker ctx) e
+    Checker         k -> go (k $ txSigChecker $ sig_checker_data ctx) e
     ScriptEndToHash k -> go (k $ script e) e
     OpCount         k -> go (k $ op_count e) e
     AddToOpCount x m  -> if opcount' > maxOpsPerScript genesis c

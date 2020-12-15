@@ -3,9 +3,10 @@
 
 module Network.Xoken.Script.Interpreter.Util where
 
-import           Data.Int                       ( Int64 )
 import           Data.EnumBitSet                ( T
+                                                , fromEnums
                                                 , toEnums
+                                                , put
                                                 )
 import           Data.List                      ( unfoldr )
 import           Data.Word                      ( Word8
@@ -20,20 +21,19 @@ import           Data.Bits                      ( Bits
                                                 )
 import           Crypto.Secp256k1               ( Sig
                                                 , PubKey
-                                                , msg
-                                                , verifySig
                                                 )
-import           Data.Serialize                 ( encode )
-import           Data.ByteString.Short          ( fromShort )
 import qualified Data.ByteString               as BS
 import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.SigHash
 import           Network.Xoken.Constants
 import           Network.Xoken.Transaction.Common
-import           Network.Xoken.Crypto.Hash
 import           Network.Xoken.Crypto.Signature
+import           Test.QuickCheck                ( Arbitrary
+                                                , sublistOf
+                                                , arbitrary
+                                                )
 
--- uses reversed MPI without length
+-- uses reversed MPI without lengthz
 -- MPI is 4B length and big endian number with most significant bit for sign
 class BigNum a where
    bin2num :: BS.ByteString -> a
@@ -43,6 +43,9 @@ class BigNum a where
 
 newtype BN = BN Integer
    deriving (Eq, Ord, Enum, Num, Real, Integral, Bits, Show)
+
+instance Arbitrary BN where
+  arbitrary = BN <$> arbitrary
 
 instance BigNum BN where
 
@@ -113,64 +116,98 @@ data ScriptFlag
   | UTXO_AFTER_GENESIS
   deriving (Show, Enum)
 
+all_flags =
+  [ VERIFY_NONE
+  , VERIFY_P2SH
+  , VERIFY_STRICTENC
+  , VERIFY_DERSIG
+  , VERIFY_LOW_S
+  , VERIFY_NULLDUMMY
+  , VERIFY_SIGPUSHONLY
+  , VERIFY_MINIMALDATA
+  , VERIFY_DISCOURAGE_UPGRADABLE_NOPS
+  , VERIFY_CLEANSTACK
+  , VERIFY_CHECKLOCKTIMEVERIFY
+  , VERIFY_CHECKSEQUENCEVERIFY
+  , VERIFY_MINIMALIF
+  , VERIFY_NULLFAIL
+  , VERIFY_COMPRESSED_PUBKEYTYPE
+  , ENABLE_SIGHASH_FORKID
+  , GENESIS
+  , UTXO_AFTER_GENESIS
+  ]
+
+instance Arbitrary ScriptFlags where
+  arbitrary = fromEnums <$> sublistOf all_flags
+
 type Signature = BS.ByteString
 type SighashForkid = Bool
 
 data BaseSignatureChecker = BaseSignatureChecker
-  { checkSig :: Sig -> SigHash -> PubKey -> Script -> SighashForkid -> Bool
+  { checkSig      :: Sig -> SigHash -> PubKey -> Script -> SighashForkid -> Bool
   , checkLockTime :: BN -> Bool
   , checkSequence :: BN -> Bool
   }
 
-txSigChecker net tx nIn amount inputIndex = BaseSignatureChecker
-  { checkSig      = checkSigFull net tx amount inputIndex
-  , checkLockTime = checkLockTimeFull tx nIn
-  , checkSequence = checkSequenceFull tx nIn
+data SigCheckerData = SigCheckerData
+  { net        :: Network
+  , tx         :: Tx
+  , nIn        :: Int
+  , amount     :: Word64
+  , inputIndex :: Int
   }
 
+instance Show SigCheckerData where
+  show _ = "SigCheckerData"
+
+txSigChecker :: SigCheckerData -> BaseSignatureChecker
+txSigChecker d = BaseSignatureChecker { checkSig      = checkSigFull d
+                                      , checkLockTime = checkLockTimeFull d
+                                      , checkSequence = checkSequenceFull d
+                                      }
+
 checkSigFull
-  :: Network
-  -> Tx
-  -> Word64
-  -> Int
+  :: SigCheckerData
   -> Sig
   -> SigHash
   -> PubKey
   -> Script
   -> SighashForkid
   -> Bool
-checkSigFull net tx amount inputIndex sig sighash pubkey script forkid =
-  verifyHashSig hash sig pubkey
-  where hash = txSigHash net tx script amount inputIndex sighash
+checkSigFull d sig sighash pubkey script forkid = verifyHashSig hash sig pubkey
+ where
+  hash = txSigHash (net d) (tx d) script (amount d) (inputIndex d) sighash
 
-checkLockTimeFull :: Tx -> Int -> BN -> Bool
-checkLockTimeFull tx nIn n =
+checkLockTimeFull :: SigCheckerData -> BN -> Bool
+checkLockTimeFull d n =
   ((tx_n < threshold && n < threshold) || (tx_n >= threshold && n >= threshold))
     && (n <= tx_n)
-    && (sequenceFinal /= txInSequence (txIn tx !! nIn))
+    && (sequenceFinal /= txInSequence (txIn txn !! nIn d))
  where
-  tx_n          = fromIntegral $ txLockTime tx
+  txn           = tx d
+  tx_n          = fromIntegral $ txLockTime txn
   threshold     = 500000000
   sequenceFinal = 0xffffffff
 
-checkSequenceFull :: Tx -> Int -> BN -> Bool
-checkSequenceFull tx nIn n =
-  (txVersion tx >= 2)
+checkSequenceFull :: SigCheckerData -> BN -> Bool
+checkSequenceFull d n =
+  (txVersion txn >= 2)
     && (txToSequence .&. sequenceLockTimeDisableFlag == 0)
     && (  (txToSequenceMasked < flag && nSequenceMasked < bnflag)
        || (txToSequenceMasked >= flag && nSequenceMasked >= bnflag)
        )
     && (nSequenceMasked <= fromIntegral txToSequenceMasked)
  where
-  txToSequence = fromIntegral $ txInSequence (txIn tx !! nIn) :: Int
+  txToSequence = fromIntegral $ txInSequence (txIn txn !! nIn d) :: Int
   nLockTimeMask = fromIntegral flag .|. sequenceLockTimeMask :: Word32
   txToSequenceMasked = txToSequence .&. fromIntegral nLockTimeMask :: Int
-  nSequenceMasked = n .&. fromIntegral nLockTimeMask :: BN
-  flag = sequenceLockTimeTypeFlag
-  bnflag = fromIntegral flag
+  nSequenceMasked             = n .&. fromIntegral nLockTimeMask :: BN
+  flag                        = sequenceLockTimeTypeFlag
+  bnflag                      = fromIntegral flag
   sequenceLockTimeDisableFlag = 2 ^ 31
-  sequenceLockTimeTypeFlag = 2 ^ 22
-  sequenceLockTimeMask = 0x0000ffff
+  sequenceLockTimeTypeFlag    = 2 ^ 22
+  sequenceLockTimeMask        = 0x0000ffff
+  txn                         = tx d
 
 cleanupScriptCode :: [ScriptOp] -> Signature -> SigHash -> Bool -> [ScriptOp]
 cleanupScriptCode script sigBS sighash forkidEnabled
@@ -213,3 +250,20 @@ isP2SH _ = False
 
 ifso :: Maybe a -> Bool -> Maybe a
 ifso y x = if x then y else Nothing
+
+data Ctx = Ctx
+  { script_flags     :: ScriptFlags
+  , consensus        :: Bool
+  , sig_checker_data :: SigCheckerData
+  }
+  deriving Show
+
+instance Arbitrary Ctx where
+  arbitrary = do
+    (flags, consensus) <- arbitrary
+    pure $ Ctx { script_flags     = flags
+               , consensus        = consensus
+               , sig_checker_data = undefined
+               }
+
+flag_equal x v c = c { script_flags = put x v (script_flags c) }
