@@ -1,3 +1,5 @@
 core/.stack-work
 core/dist-newstyle
+core/hie.yaml
+core/.hlint.yaml
 .stack-work/

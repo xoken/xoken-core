@@ -1,44 +1,45 @@
 {-# LANGUAGE LambdaCase #-}
+
 module Network.Xoken.Script.Interpreter where
 
-import           Data.Word                      ( Word8
-                                                , Word32
-                                                , Word64
-                                                )
-import           Data.Maybe                     ( maybe )
-import           Data.List                      ( unfoldr )
-import           Data.Bits                      ( complement
-                                                , (.&.)
-                                                , (.|.)
-                                                , xor
-                                                , shiftL
-                                                , shiftR
-                                                )
-import           Data.Bits.ByteString
-import           Data.EnumBitSet                ( get
-                                                , put
-                                                , empty
-                                                , fromEnums
-                                                , disjoint
-                                                )
-import           Control.Monad                  ( sequence_
+import           Control.Monad                  ( unless
                                                 , when
                                                 )
-import           Crypto.Hash                    ( hashWith
-                                                , RIPEMD160(..)
+import           Crypto.Hash                    ( RIPEMD160(..)
                                                 , SHA1(..)
                                                 , SHA256(..)
+                                                , hashWith
                                                 )
-import           Crypto.Secp256k1               ( importSig
-                                                , importPubKey
+import           Crypto.Secp256k1               ( importPubKey
+                                                , importSig
                                                 )
-import           Data.Serialize.Get             ( runGet
-                                                , getWord64le
+import           Data.Bits                      ( complement
+                                                , shiftL
+                                                , shiftR
+                                                , xor
+                                                , (.&.)
+                                                , (.|.)
                                                 )
-import qualified Data.Serialize                as S
-import qualified Data.ByteString               as BS
+import           Data.Bits.ByteString           ( )
 import qualified Data.ByteArray                as BA
+import qualified Data.ByteString               as BS
+import           Data.EnumBitSet                ( disjoint
+                                                , empty
+                                                , fromEnums
+                                                , get
+                                                , put
+                                                )
+import           Data.Functor                   ( (<&>) )
+import           Data.List                      ( unfoldr )
 import qualified Data.Sequence                 as Seq
+import qualified Data.Serialize                as S
+import           Data.Serialize.Get             ( getWord64le
+                                                , runGet
+                                                )
+import           Data.Word                      ( Word32
+                                                , Word64
+                                                , Word8
+                                                )
 import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.SigHash
 import           Network.Xoken.Script.Interpreter.Commands
@@ -47,21 +48,23 @@ import           Network.Xoken.Script.Interpreter.Util
 fixed_shiftR :: BS.ByteString -> Int -> BS.ByteString
 fixed_shiftR bs 0 = bs
 fixed_shiftR bs i
-    | i `mod` 8 == 0 =
-      BS.take (BS.length bs) $ BS.append
-        (BS.replicate (i `div` 8) 0)
-        (BS.take (BS.length bs - (i `div` 8)) bs)
-    | i `mod` 8 /= 0 =
-      BS.pack $ take (BS.length bs)
-        $ (replicate (i `div` 8) (0 :: Word8))
-        ++ (go (i `mod` 8) 0 $ BS.unpack (BS.take (BS.length bs - (i `div` 8)) bs))
-  where
-  go _ _ [] = []
-  go j w1 (w2:wst) = (maskR j w1 w2) : go j w2 wst
-  maskR j w1 w2 = (shiftL w1 (8-j)) .|. (shiftR w2 j)
+  | i `mod` 8 == 0
+  = BS.take (BS.length bs) $ BS.append
+    (BS.replicate (i `div` 8) 0)
+    (BS.take (BS.length bs - (i `div` 8)) bs)
+  | i `mod` 8 /= 0
+  = BS.pack
+    $  take (BS.length bs)
+    $  (replicate (i `div` 8) (0 :: Word8))
+    ++ (go (i `mod` 8) 0 $ BS.unpack (BS.take (BS.length bs - (i `div` 8)) bs))
+ where
+  go _ _  []         = []
+  go j w1 (w2 : wst) = (maskR j w1 w2) : go j w2 wst
+  maskR j w1 w2 = (shiftL w1 (8 - j)) .|. (shiftR w2 j)
 {-# INLINE fixed_shiftR #-}
 
 maxScriptElementSizeBeforeGenesis = 520
+
 sequenceLocktimeDisableFlag = 2 ^ 31
 
 maxPubKeysPerMultiSig :: Integral a => Bool -> Bool -> a
@@ -107,7 +110,7 @@ verifyScript e sigScript pubKeyScript
   env     = flags_equal fs e
   go env script = interpretWith $ script_equal script env
   (env_after_sig    , error_sig    ) = go env sigScript
-  (env_after_pubkey , error_pubkey ) = go env pubKeyScript
+  (env_after_pubkey , error_pubkey ) = go env_after_sig pubKeyScript
   (env_after_pubkey2, error_pubkey2) = case Seq.viewr $ stack e' of
     rest Seq.:> x ->
       either (const (e', Just VerifyScriptAssertion)) (go $ stack_equal rest e')
@@ -124,7 +127,8 @@ verifyScript e sigScript pubKeyScript
     | otherwise = ifso (Just CleanStack) $ length (stack final_env) /= 1
 
 interpretWith :: Env -> (Env, Maybe InterpreterError)
-interpretWith env = go (script env) env where
+interpretWith env = go (script env) env
+ where
   go (op : rest) e
     | signal_disabled = (e, Just DisabledOpcode)
     | execute = next
@@ -169,7 +173,7 @@ empty_env script checker = Env { stack                  = Seq.empty
 
 opcode :: ScriptOp -> Cmd ()
 -- Pushing Data
-opcode OP_0                  = push $ BS.empty
+opcode OP_0                  = push BS.empty
 opcode (OP_PUSHDATA bs size) = pushdata bs size
 opcode OP_1NEGATE            = pushint (-1)
 opcode OP_1                  = pushint 1
@@ -215,7 +219,7 @@ opcode OP_2OVER        = arrangepeek 4 (\[x1, x2, x3, x4] -> [x1, x2])
 opcode OP_2ROT =
   arrange 6 (\[x1, x2, x3, x4, x5, x6] -> [x3, x4, x5, x6, x1, x2])
 opcode OP_2SWAP = arrange 4 (\[x1, x2, x3, x4] -> [x3, x4, x1, x2])
-opcode OP_IFDUP = peek >>= \x1 -> when (not $ isZero x1) (push x1)
+opcode OP_IFDUP = peek >>= \x1 -> unless (isZero x1) (push x1)
 opcode OP_DEPTH = stack_size >>= push . int2BS
 opcode OP_DROP  = pop >> pure ()
 opcode OP_DUP   = peek >>= push
@@ -261,8 +265,8 @@ opcode OP_EQUALVERIFY =
 -- Arithmetic
 opcode OP_1ADD      = unaryarith succ
 opcode OP_1SUB      = unaryarith pred
-opcode OP_2MUL      = unaryarith (flip shiftL 1)
-opcode OP_2DIV      = unaryarith (flip shiftR 1)
+opcode OP_2MUL      = unaryarith (`shiftL` 1)
+opcode OP_2DIV      = unaryarith (`shiftR` 1)
 opcode OP_NEGATE    = unaryarith negate
 opcode OP_ABS       = unaryarith abs
 opcode OP_NOT       = unaryarith (truth . (== 0))
@@ -338,7 +342,7 @@ pushdata bs size = flag VERIFY_MINIMALDATA >>= \case
     _    -> push bs
 
 isOverMaxElemSize :: Integral a => a -> Cmd Bool
-isOverMaxElemSize n = flag UTXO_AFTER_GENESIS >>= pure . isOver . not
+isOverMaxElemSize n = flag UTXO_AFTER_GENESIS <&> isOver . not
   where isOver = (&& n > fromIntegral maxScriptElementSizeBeforeGenesis)
 
 arrange :: Int -> ([Elem] -> [Elem]) -> Cmd ()
@@ -358,7 +362,7 @@ binaryarith f = pop_n 2 >>= arith >>= \[x1, x2] -> push $ bin $ f x1 x2
 
 binarybitwise :: (Word8 -> Word8 -> Word8) -> Cmd ()
 binarybitwise f = pop_n 2 >>= \[x1, x2] -> if BS.length x1 == BS.length x2
-  then push (BS.pack $ BS.zipWith f x1 x2)
+  then push $ BS.pack $ BS.zipWith f x1 x2
   else terminate InvalidOperandSize
 
 btruth :: (a1 -> a2 -> Bool) -> a1 -> a2 -> BN
@@ -373,9 +377,8 @@ shift f = pop_n 2 >>= \[x1, x2] -> do
   n <- num' x2
   if n < 0
     then terminate InvalidNumberRange
-    else push $ if n >= fromIntegral size * 8
-      then BS.replicate size 0
-      else go x1 n
+    else push
+      $ if n >= fromIntegral size * 8 then BS.replicate size 0 else go x1 n
  where
   go x n | n <= max  = f x $ fromIntegral n
          | otherwise = go (f x maxInt) (n - max)
@@ -404,7 +407,7 @@ maybenop
   -> (BN -> Bool)
   -> Cmd ()
 maybenop flag check enabled = flags >>= \fs ->
-  if (not (get flag fs) || get UTXO_AFTER_GENESIS fs)
+  if not (get flag fs) || get UTXO_AFTER_GENESIS fs
     then nop
     else pop >>= limited_num 5 >>= \n -> checker >>= \c -> do
       when (n < 0)                  (terminate NegativeLocktime)
@@ -440,7 +443,6 @@ checkmultisig finalize = do
   fs               <- flags
   impl             <- checker
   script           <- script_end
-  opCount          <- opcount
   nKeysBN          <- pop
   nKeysCountSigned <- fromIntegral <$> num' nKeysBN
   maxPubKeys       <- apply_genesis_and_consensus maxPubKeysPerMultiSig
@@ -475,7 +477,7 @@ multisig finalize check sigs keys verifynull = case (sigs, keys) of
     multisig finalize check (if success then sigs' else sigs) keys' verifynull
 
 verify :: InterpreterError -> Bool -> Cmd ()
-verify error x = when (not x) (terminate error)
+verify error x = unless x (terminate error)
 
 pushbool :: Bool -> Cmd ()
 pushbool = push . bin . truth
@@ -548,8 +550,8 @@ isValidSignatureEncoding sigBS = and
 
 checkLowDERSignature :: BS.ByteString -> Cmd ()
 checkLowDERSignature sigBS = do
-  when (not $ isValidSignatureEncoding sigBS) (terminate SigDER)
-  when (not $ isLowS sigBS)                   (terminate SigHighS)
+  unless (isValidSignatureEncoding sigBS) (terminate SigDER)
+  unless (isLowS sigBS)                   (terminate SigHighS)
 
 isLowS :: BS.ByteString -> Bool
 isLowS sigBS = case ecdsa_signature_parse_der_lax (BS.unpack sigBS) of

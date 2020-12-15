@@ -44,10 +44,10 @@ signHash k = signMsg k . hashToMsg
 
 -- | Verify an ECDSA signature for a 256-bit hash.
 verifyHashSig :: Hash256 -> Sig -> PubKey -> Bool
-verifyHashSig h s p = verifySig p g m
-  where
-    (g, _) = normalizeSig s
-    m = hashToMsg h
+verifyHashSig h s p = verifySig p sig (hashToMsg h) where
+  sig = case normalizeSig s of
+    Just g -> g
+    _ -> s
 
 -- | Deserialize an ECDSA signature as commonly encoded in Bitcoin.
 getSig :: Get Sig
@@ -74,7 +74,10 @@ putSig s = putByteString $ exportSig s
 
 -- | Is canonical half order.
 isCanonicalHalfOrder :: Sig -> Bool
-isCanonicalHalfOrder = not . snd . normalizeSig
+isCanonicalHalfOrder sig =
+  case normalizeSig sig of
+    Just _ -> False
+    _ -> True
 
 -- | Decode signature strictly.
 decodeStrictSig :: ByteString -> Maybe Sig
@@ -83,9 +86,10 @@ decodeStrictSig bs = do
     let compact = exportCompactSig g
     -- <http://www.secg.org/sec1-v2.pdf Section 4.1.4>
     -- 4.1.4.1 (r and s can not be zero)
-    guard $ getCompactSigR compact /= zero
-    guard $ getCompactSigS compact /= zero
+    let (r, s) = BS.splitAt 32 (getCompactSig compact)
+    guard $ r /= zero
+    guard $ s /= zero
     guard $ isCanonicalHalfOrder g
     return g
   where
-    zero = toShort $ BS.replicate 32 0
+    zero = BS.replicate 32 0
