@@ -14,6 +14,7 @@ import           Data.Word                      ( Word8
 import           Data.EnumBitSet                ( fromEnums
                                                 , (.|.)
                                                 , get
+                                                , empty
                                                 )
 import           Data.ByteString.Builder        ( toLazyByteString
                                                 , byteStringHex
@@ -37,17 +38,22 @@ sigChecker = txSigChecker net txTo nIn amount inputIndex where
   amount     = undefined
   inputIndex = undefined
 
-env :: Script -> Env
-env script = (empty_env script sigChecker)
+default_ctx = Ctx
   { script_flags = fromEnums [GENESIS, UTXO_AFTER_GENESIS, VERIFY_MINIMALIF]
                    .|. mandatoryScriptFlags
                    .|. standardScriptFlags
+  , consensus = True
+  , base_signature_checker = sigChecker
   }
 
 opPush = opPushData . rawNumToBS
 
 spec :: Spec
 spec = do
+  describe "verify script" $ do
+    it "empty scripts" $ do
+      verifyScriptWith default_ctx empty_env (Script []) (Script [])
+        `shouldBe` Just EvalFalse
   describe "interpreter dependencies" $ do
     it "still has wrong shiftR"
       $          (BS.pack [1, 2, 3] `shiftR` 8)
@@ -90,6 +96,7 @@ spec = do
       $ \elems -> forAll (listOf arbitraryBS) $ \alt_elems ->
           forAll arbitraryBS $ \bs ->
             test_script_with
+                default_ctx
                 ( stack_equal (Seq.fromList $ elems ++ [bs])
                 . alt_stack_equal (Seq.fromList alt_elems)
                 )
@@ -101,6 +108,7 @@ spec = do
       $ forAll (listOf arbitraryBS)
       $ \elems -> forAll (listOf arbitraryBS) $ \alt_elems ->
           test_script_with
+              default_ctx
               ( stack_equal (Seq.fromList elems)
               . alt_stack_equal (Seq.fromList $ alt_elems)
               )
@@ -119,7 +127,9 @@ spec = do
       $ property
       $ forAll (listOf arbitraryBS)
       $ \elems ->
-          test_script_with (stack_equal $ Seq.fromList elems) [OP_DEPTH]
+          test_script_with default_ctx
+                           (stack_equal $ Seq.fromList elems)
+                           [OP_DEPTH]
             $ success_with_elem_check
             $ (`shouldBe` elems ++ [int2BS $ length elems])
     arrange_test OP_DROP 1 (\[a] -> [])
@@ -131,7 +141,8 @@ spec = do
       $ forAll (listOf arbitraryBS)
       $ \elems -> forAll (arbitrary :: Gen Word32) $ \i -> do
           let n = fromIntegral i
-          test_script_with (stack_equal $ Seq.fromList elems)
+          test_script_with default_ctx
+                           (stack_equal $ Seq.fromList elems)
                            [opPushData (int2BS n), OP_PICK]
             $ if n < length elems
                 then success_with_elem_check
@@ -142,7 +153,8 @@ spec = do
       $ forAll (listOf arbitraryBS)
       $ \xs -> forAll (arbitrary :: Gen Word32) $ \i -> do
           let n = fromIntegral i
-          test_script_with (stack_equal $ Seq.fromList xs)
+          test_script_with default_ctx
+                           (stack_equal $ Seq.fromList xs)
                            [opPushData (int2BS n), OP_ROLL]
             $ if n < length xs
                 then do
@@ -166,8 +178,10 @@ spec = do
     test [OP_RETURN, OP_ELSE]                         []
     testNoFlags (Just OpReturn) [OP_RETURN]
     it "handles double else branch" $ forAll arbitrary $ \genesis_flag ->
-      test_script_with (flag_equal UTXO_AFTER_GENESIS genesis_flag)
-                       [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
+      test_script_with
+          (flag_equal UTXO_AFTER_GENESIS genesis_flag default_ctx)
+          id
+          [OP_0, OP_IF, OP_ELSE, OP_ELSE, OP_ENDIF]
         $ const
             (`shouldBe` if genesis_flag
               then Just UnbalancedConditional
@@ -209,11 +223,12 @@ spec = do
       $ property
       $ forAll arbitraryBN
       $ \bn -> forAll arbitraryBN $ \size ->
-          test_script_with (stack_equal $ Seq.fromList $ bin <$> [bn, size])
+          test_script_with default_ctx
+                           (stack_equal $ Seq.fromList $ bin <$> [bn, size])
                            [OP_NUM2BIN]
             $ \env error -> do
                 let
-                  genesis = get UTXO_AFTER_GENESIS (script_flags env)
+                  genesis = get UTXO_AFTER_GENESIS $ script_flags default_ctx
                   tooBig =
                     not genesis
                       && size
@@ -334,15 +349,17 @@ n_bs_test op n f =
     $ property
     $ forAll (listOf arbitraryBS)
     $ \elems -> test_script_with
-        (stack_equal $ Seq.fromList $ elems)
+        default_ctx
+        (stack_equal $ Seq.fromList elems)
         [op]
         (if length elems < n
           then const (`shouldBe` Just StackUnderflow)
           else uncurry f (splitAt (length elems - n) elems)
         )
 
-test_script_with change_env ops f =
-  uncurry f (interpretWith $ change_env $ env $ Script ops)
+test_script_with ctx change_env ops f = uncurry
+  f
+  (interpretWith ctx $ change_env $ script_equal (Script ops) empty_env)
 
 bn_conversion :: BN -> [Word8] -> SpecWith (Arg Expectation)
 bn_conversion n xs = do
@@ -356,7 +373,7 @@ bn_conversion n xs = do
         bin2num' require_minimal max_size (BS.pack xs)
           `shouldBe` if max_size < length xs then Nothing else Just n
 
-test_script = test_script_with id
+test_script = test_script_with default_ctx id
 success_with_elem_check f = success_with_env_check (f . elems)
 success_with_alt_elem_check f = success_with_env_check (f . alt_elems)
 success_with_env_check f env error = (error `shouldBe` Nothing) >> f env
@@ -369,9 +386,8 @@ testDisabledOp op = forAll (listOf arbitraryBS) $ \elems ->
   forAll arbitraryBS $ \bs -> forAll arbitrary $ \flag ->
     forAll arbitrary $ \failed -> do
       test_script_with
-          ( flag_equal UTXO_AFTER_GENESIS flag
-          . stack_equal (Seq.fromList $ elems)
-          )
+          (flag_equal UTXO_AFTER_GENESIS flag default_ctx)
+          (stack_equal (Seq.fromList elems))
           [ if failed then OP_1 else OP_0
           , OP_IF
           , OP_ELSE
@@ -430,7 +446,7 @@ ftestBS
   -> SpecWith (Arg Expectation)
 ftestBS f push_elems ops expected_elems =
   it ("returns " ++ show (hex <$> expected) ++ " given " ++ show_ops)
-    $ test_script_with (stack_equal $ Seq.fromList packed) ops
+    $ test_script_with default_ctx (stack_equal $ Seq.fromList packed) ops
     $ success_with_elem_check
     $ \elems -> hex <$> elems `shouldBe` hex <$> expected
  where
@@ -456,7 +472,10 @@ testNoFlags
   :: Maybe InterpreterError -> [ScriptOp] -> SpecWith (Arg Expectation)
 testNoFlags r ops =
   it ("returns [] given " ++ show ops ++ " and no flags")
-    $          snd (interpretWith $ empty_env (Script ops) sigChecker)
+    $          snd
+                 (interpretWith (default_ctx { script_flags = empty })
+                                (script_equal (Script ops) empty_env)
+                 )
     `shouldBe` r
 
 rawNumToBS = BS.reverse . BS.pack . unroll

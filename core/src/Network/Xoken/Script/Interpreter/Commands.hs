@@ -2,13 +2,10 @@
 module Network.Xoken.Script.Interpreter.Commands where
 
 import           Data.Maybe                     ( mapMaybe )
-import           Data.Word                      ( Word8
-                                                , Word32
+import           Data.Word                      ( Word32
                                                 , Word64
                                                 )
-import           Data.EnumBitSet                ( T
-                                                , toEnums
-                                                , get
+import           Data.EnumBitSet                ( get
                                                 , put
                                                 )
 import           Data.Foldable                  ( toList )
@@ -73,6 +70,8 @@ data InterpreterCommand a
 
 type Cmd = Free InterpreterCommand
 
+data InterpreterResult = InterpreterResult {}
+
 data InterpreterError
   = StackUnderflow
   | ImpossibleEncoding
@@ -122,28 +121,31 @@ data InterpreterError
   deriving (Show, Eq)
 
 data Env = Env
-  { stack :: Stack Elem
-  , alt_stack :: Stack Elem
-  , branch_stack :: Stack Branch
-  , failed_branches :: Word32
-  , non_top_level_return :: Bool
-  , script_flags :: ScriptFlags
-  , base_signature_checker :: BaseSignatureChecker
-  , script :: [ScriptOp]
-  , consensus :: Bool
-  , op_count :: Word64
+  { stack                  :: Stack Elem
+  , alt_stack              :: Stack Elem
+  , branch_stack           :: Stack Branch
+  , failed_branches        :: Word32
+  , non_top_level_return   :: Bool
+  , script                 :: [ScriptOp]
+  , op_count               :: Word64
   }
 
+data Ctx = Ctx
+  { script_flags :: ScriptFlags
+  , consensus :: Bool
+  , base_signature_checker :: BaseSignatureChecker
+  }
+
+flag_equal x v c = c { script_flags = put x v (script_flags c) }
 stack_equal x e = e { stack = x }
 alt_stack_equal x e = e { alt_stack = x }
-flags_equal x e = e { script_flags = x }
-flag_equal x v e = flags_equal (put x v $ script_flags e) e
 script_equal x e = e { script = scriptOps x }
 
 data Branch = Branch
-  { satisfied :: Bool
+  { satisfied      :: Bool
   , is_else_branch :: Bool
-  } deriving (Show, Eq)
+  }
+  deriving (Show, Eq)
 
 rindex :: Int -> Env -> Int
 rindex i e = length (stack e) - i
@@ -155,8 +157,8 @@ maxStackElemsBeforeGenesis = 1000
 
 data CmdResult = OK | Error InterpreterError | Return
 
-interpretCmd :: Cmd () -> Env -> (Env, CmdResult)
-interpretCmd = go where
+interpretCmd :: Ctx -> Cmd () -> Env -> (Env, CmdResult)
+interpretCmd ctx = go where
   go (Pure ()) e = (e, OK)
   go (Free x ) e = case x of
     -- signal
@@ -219,8 +221,8 @@ interpretCmd = go where
       where ys = mapMaybe num xs
     -- field access
     Flag f k          -> go (k $ flag f) e
-    Flags           k -> go (k $ script_flags e) e
-    Checker         k -> go (k $ base_signature_checker e) e
+    Flags           k -> go (k $ script_flags ctx) e
+    Checker         k -> go (k $ base_signature_checker ctx) e
     ScriptEndToHash k -> go (k $ script e) e
     OpCount         k -> go (k $ op_count e) e
     AddToOpCount x m  -> if opcount' > maxOpsPerScript genesis c
@@ -229,8 +231,8 @@ interpretCmd = go where
       where opcount' = op_count e + x
     ApplyGenesisAndConsensus f k -> go (k $ f genesis c) e
    where
-    c = consensus e
-    flag x = get x (script_flags e)
+    c = consensus ctx
+    flag x = get x $ script_flags ctx
     genesis      = flag UTXO_AFTER_GENESIS
     maxNumLength = maxScriptNumLength genesis c
     num          = bin2num' (flag VERIFY_MINIMALDATA) maxNumLength

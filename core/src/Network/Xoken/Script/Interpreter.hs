@@ -24,7 +24,6 @@ import           Data.Bits.ByteString           ( )
 import qualified Data.ByteArray                as BA
 import qualified Data.ByteString               as BS
 import           Data.EnumBitSet                ( disjoint
-                                                , empty
                                                 , fromEnums
                                                 , get
                                                 , put
@@ -92,8 +91,8 @@ standardScriptFlags = fromEnums
   , VERIFY_CHECKSEQUENCEVERIFY
   ]
 
-verifyScript :: Env -> Script -> Script -> Maybe InterpreterError
-verifyScript e sigScript pubKeyScript
+verifyScriptWith :: Ctx -> Env -> Script -> Script -> Maybe InterpreterError
+verifyScriptWith ctx_to_fix env sigScript pubKeyScript
   | get VERIFY_SIGPUSHONLY fs && not (isPushOnly sigScript) = Just SigPushOnly
   | error_sig /= Nothing                    = error_sig
   | error_pubkey /= Nothing                 = error_pubkey
@@ -105,10 +104,10 @@ verifyScript e sigScript pubKeyScript
   | otherwise                               = checkCleanStack env_after_pubkey2
  where
   fs = put VERIFY_STRICTENC (get ENABLE_SIGHASH_FORKID flags) flags
-    where flags = script_flags e
+    where flags = script_flags ctx_to_fix
+  ctx     = ctx_to_fix { script_flags = fs }
   genesis = get UTXO_AFTER_GENESIS fs
-  env     = flags_equal fs e
-  go env script = interpretWith $ script_equal script env
+  go env script = interpretWith ctx $ script_equal script env
   (env_after_sig    , error_sig    ) = go env sigScript
   (env_after_pubkey , error_pubkey ) = go env_after_sig pubKeyScript
   (env_after_pubkey2, error_pubkey2) = case Seq.viewr $ stack e' of
@@ -126,8 +125,8 @@ verifyScript e sigScript pubKeyScript
     | not (get VERIFY_P2SH fs) = Just VerifyScriptAssertion
     | otherwise = ifso (Just CleanStack) $ length (stack final_env) /= 1
 
-interpretWith :: Env -> (Env, Maybe InterpreterError)
-interpretWith env = go (script env) env
+interpretWith :: Ctx -> Env -> (Env, Maybe InterpreterError)
+interpretWith ctx env = go (script env) env
  where
   go (op : rest) e
     | signal_disabled = (e, Just DisabledOpcode)
@@ -145,11 +144,11 @@ interpretWith env = go (script env) env
    where
     signal_disabled =
       (op `elem` [OP_2MUL, OP_2DIV])
-        && (not (get UTXO_AFTER_GENESIS $ script_flags e) || execute)
+        && (not (get UTXO_AFTER_GENESIS $ script_flags ctx) || execute)
     execute =
       (failed_branches e == 0)
         && (not (non_top_level_return e) || op == OP_RETURN)
-    next cmd e = case interpretCmd (add_to_opcount 1 >> cmd) e of
+    next cmd e = case interpretCmd ctx (add_to_opcount 1 >> cmd) e of
       (e', OK         ) -> go rest e'
       (e', Error error) -> (e', Just error)
       (e', Return     ) -> (e', Nothing)
@@ -158,18 +157,14 @@ interpretWith env = go (script env) env
                      | otherwise = add_to_opcount 1 >> opcode op
   go [] e = (e, Nothing)
 
-empty_env :: Script -> BaseSignatureChecker -> Env
-empty_env script checker = Env { stack                  = Seq.empty
-                               , alt_stack              = Seq.empty
-                               , branch_stack           = Seq.empty
-                               , failed_branches        = 0
-                               , non_top_level_return   = False
-                               , script_flags           = empty
-                               , base_signature_checker = checker
-                               , script                 = scriptOps script
-                               , consensus              = True
-                               , op_count               = 0
-                               }
+empty_env = Env { stack                = Seq.empty
+                , alt_stack            = Seq.empty
+                , branch_stack         = Seq.empty
+                , failed_branches      = 0
+                , non_top_level_return = False
+                , script               = []
+                , op_count             = 0
+                }
 
 opcode :: ScriptOp -> Cmd ()
 -- Pushing Data
