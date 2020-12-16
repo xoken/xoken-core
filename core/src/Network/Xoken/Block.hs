@@ -24,11 +24,11 @@ module Network.Xoken.Block
     -- , genesisBlock
     , headerWork
     , isValidPOW
-    , connectBlocks
-    , connectBlock
+--    , connectBlocks
+--    , connectBlock
     , parentBlock
-    , splitPoint
-    , blockLocator
+--    , splitPoint
+--    , blockLocator
       -- * Merkle Blocks
     , MerkleBlock(..)
     , MerkleRoot
