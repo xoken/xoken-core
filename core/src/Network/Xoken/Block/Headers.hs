@@ -28,8 +28,8 @@ module Network.Xoken.Block.Headers
     , getParents
     , getAncestor
 --    , splitPoint
---    , connectBlocks
---    , connectBlock
+    , connectBlocks
+    , connectBlock
 --    , blockLocator
       -- * In-Memory Header Chain Store
     , HeaderMemory(..)
@@ -65,7 +65,7 @@ module Network.Xoken.Block.Headers
 
 import Control.Applicative ((<|>))
 import Control.Monad (guard, unless, when)
-import Control.Monad.Except (ExceptT(..), runExceptT, throwError)
+import Control.Monad.Except (ExceptT(..), runExcept, throwError)
 import Control.Monad.State.Strict as State (StateT, get, gets, lift, modify)
 import Control.Monad.Trans.Maybe
 import Data.Bits ((.&.), shiftL, shiftR)
@@ -190,6 +190,10 @@ addBlockHeaderMemory bn s@HeaderMemory {..} =
     let bm' = addBlockToMap bn memoryHeaderMap
      in s {memoryHeaderMap = bm'}
 
+addBlockHeadersMemory :: [BlockNode] -> HeaderMemory -> HeaderMemory
+addBlockHeadersMemory [] hm = hm
+addBlockHeadersMemory (bn:bns) hm = addBlockHeadersMemory bns (addBlockHeaderMemory bn hm)
+
 -- | Get block header from memory block map.
 getBlockHeaderMemory :: BlockHash -> HeaderMemory -> Maybe BlockNode
 getBlockHeaderMemory bh HeaderMemory {..} = do
@@ -240,34 +244,35 @@ genesisNode net =
 
 -- | Validate a list of continuous block headers and import them to the
 -- block chain. Return 'Left' on failure with error information.
-{-
 connectBlocks ::
-       BlockHeaders m
-    => Network
+       HeaderMemory
+    -> Network
     -> Timestamp -- ^ current time
     -> [BlockHeader]
-    -> m (Either String [BlockNode])
-connectBlocks _ _ [] = return $ Right []
-connectBlocks net t bhs@(bh:_) =
-    runExceptT $ do
+    -> Either String (HeaderMemory, [BlockNode])
+connectBlocks hm _ _ [] = Right (hm, [])
+connectBlocks hm net t bhs@(bh:_) =
+    runExcept $ do
         unless (chained bhs) $ throwError "Blocks to connect do not form a chain"
-        par <- maybeToExceptT "Could not get parent block" (MaybeT (parentBlock bh))
-        pars <- lift $ getParents 10 par
-        bb <- lift getBestBlockHeader
-        go par [] bb par pars bhs >>= \case
+        par <- maybeToExceptT "Could not get parent block" (MaybeT (return $ parentBlock hm bh))
+        let pars = getParents hm 10 par
+            bb = memoryBestHeader hm
+        go hm par [] bb par pars bhs >>= \case
             bns@(bn:_) -> do
-                lift $ addBlockHeaders bns
                 let bb' = chooseBest bn bb
-                when (bb' /= bb) $ lift $ setBestBlockHeader bb'
-                return bns
+                    nhm = addBlockHeadersMemory bns $
+                            if bb' /= bb
+                                then hm {memoryBestHeader = bb'}
+                                else hm
+                return (nhm, bns)
             _ -> undefined
   where
     chained (h1:h2:hs) = headerHash h1 == prevBlock h2 && chained (h2 : hs)
     chained _ = True
-    skipit lbh ls par
+    skipit hm lbh ls par
         | sh == nodeHeight lbh = return lbh
         | sh < nodeHeight lbh = do
-            skM <- lift $ getAncestor sh lbh
+            let skM = getAncestor hm sh lbh
             case skM of
                 Just sk -> return sk
                 Nothing -> throwError $ "BUG: Could not get skip for block " ++ show (headerHash $ nodeHeader par)
@@ -277,46 +282,43 @@ connectBlocks net t bhs@(bh:_) =
             return sn
       where
         sh = skipHeight (nodeHeight par + 1)
-    go _ acc _ _ _ [] = return acc
-    go lbh acc bb par pars (h:hs) = do
-        sk <- skipit lbh acc par
+    go _ _ acc _ _ _ [] = return acc
+    go hm lbh acc bb par pars (h:hs) = do
+        sk <- skipit hm lbh acc par
         bn <- ExceptT . return $ validBlock net t bb par pars h sk
-        go lbh (bn : acc) (chooseBest bn bb) bn (take 10 $ par : pars) hs
--}
+        go hm lbh (bn : acc) (chooseBest bn bb) bn (take 10 $ par : pars) hs
 
 -- | Block's parent. If the block header is in the store, its parent must also
 -- be there. No block header get deleted or pruned from the store.
-parentBlock :: BlockHeaders m => BlockHeader -> m (Maybe BlockNode)
-parentBlock bh = getBlockHeader (prevBlock bh)
+parentBlock :: HeaderMemory -> BlockHeader -> Maybe BlockNode
+parentBlock hm bh = getBlockHeaderMemory (prevBlock bh) hm
 
 -- | Validate and connect single block header to the block chain. Return 'Left' if fails
 -- to be validated.
-{-
 connectBlock ::
-       BlockHeaders m
-    => Network
+       HeaderMemory
+    -> Network
     -> Timestamp -- ^ current time
     -> BlockHeader
-    -> m (Either String BlockNode)
-connectBlock net t bh =
-    runExceptT $ do
-        par <- maybeToExceptT "Could not get parent block" (MaybeT (parentBlock bh))
-        pars <- lift $ getParents 10 par
-        skM <- lift $ getAncestor (skipHeight (nodeHeight par + 1)) par
-        sk <-
-            case skM of
+    -> Either String (HeaderMemory, BlockNode)
+connectBlock hm net t bh =
+    runExcept $ do
+        par <- maybeToExceptT "Could not get parent block" (MaybeT (return $ parentBlock hm bh))
+        let pars = getParents hm 10 par
+            skM = getAncestor hm (skipHeight (nodeHeight par + 1)) par
+        sk <- case skM of
                 Just sk -> return sk
                 Nothing -> throwError $ "BUG: Could not get skip for block " ++ show (headerHash $ nodeHeader par)
-        bb <- lift getBestBlockHeader
+        let bb = memoryBestHeader hm
         bn <- ExceptT . return $ validBlock net t bb par pars bh sk
         let bb' = chooseBest bb bn
-        lift $ addBlockHeader bn
-        when (bb /= bb') . lift $ setBestBlockHeader bb'
-        return bn
--}
+            nhm = addBlockHeaderMemory bn $
+                    if bb /= bb'
+                        then (hm {memoryBestHeader = bb'})
+                        else hm
+        return (nhm, bn)
 
 -- | Validate this block header. Build a 'BlockNode' if successful.
-{-
 validBlock ::
        Network
     -> Timestamp -- ^ current time
@@ -341,7 +343,6 @@ validBlock net t bb par pars bh sk = do
     unless (bip34 net ng hh) $ Left $ "Rejected BIP-34 block: " ++ show hh
     unless (validVersion net ng nv) $ Left $ "Invalid block version: " ++ show nv
     return BlockNode {nodeHeader = bh, nodeHeight = ng, nodeWork = aw, nodeSkip = headerHash $ nodeHeader sk}
--}
 
 -- | Return the median of all provided timestamps. Can be unsorted. Error on
 -- empty list.
