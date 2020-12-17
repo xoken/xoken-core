@@ -49,6 +49,7 @@ module Network.Xoken.Block.Headers
 --    , lastNoMinDiff
 --    , nextWorkRequired
 --    , nextEdaWorkRequired
+    , getNextWorkRequired
     , nextDaaWorkRequired
     , computeTarget
     , getSuitableBlock

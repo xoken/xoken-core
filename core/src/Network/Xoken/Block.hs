@@ -27,6 +27,7 @@ module Network.Xoken.Block
     , connectBlocks
     , connectBlock
     , parentBlock
+    , getNextWorkRequired
 --    , splitPoint
 --    , blockLocator
       -- * Merkle Blocks
