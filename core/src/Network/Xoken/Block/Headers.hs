@@ -653,9 +653,9 @@ chooseBest b1 b2
     | otherwise = b2
 
 -- | Get list of blocks for a block locator.
-{--
-blockLocatorNodes :: BlockHeaders m => BlockNode -> m [BlockNode]
-blockLocatorNodes best = reverse <$> go [] best 1
+
+blockLocatorNodes :: HeaderMemory -> BlockNode -> [BlockNode]
+blockLocatorNodes hm best = reverse $ go [] best 1
   where
     e1 = error "Could not get ancestor"
     go loc bn n =
@@ -665,20 +665,17 @@ blockLocatorNodes best = reverse <$> go [] best 1
                     then n * 2
                     else 1
          in if nodeHeight bn < n'
-                then do
-                    a <- fromMaybe e1 <$> getAncestor 0 bn
-                    return $ a : loc'
-                else do
+                then
+                    let a = fromMaybe e1 $ getAncestor hm 0 bn
+                    in (a : loc')
+                else
                     let h = nodeHeight bn - n'
-                    bn' <- fromMaybe e1 <$> getAncestor h bn
-                    go loc' bn' n'
---}
+                        bn' = fromMaybe e1 $ getAncestor hm h bn
+                    in go loc' bn' n'
 
 -- | Get block locator.
-{--
-blockLocator :: BlockHeaders m => BlockNode -> m BlockLocator
-blockLocator bn = map (headerHash . nodeHeader) <$> blockLocatorNodes bn
---}
+blockLocator :: HeaderMemory -> BlockNode -> BlockLocator
+blockLocator hm bn = fmap (headerHash . nodeHeader) $ blockLocatorNodes hm bn
 
 -- | Become rich beyond your wildest dreams.
 mineBlock :: Network -> Word32 -> BlockHeader -> BlockHeader
