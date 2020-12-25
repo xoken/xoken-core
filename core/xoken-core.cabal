@@ -158,6 +158,7 @@ test-suite spec
       Network.Xoken.Script.Interpreter
       Network.Xoken.Script.Interpreter.Commands
       Network.Xoken.Script.Interpreter.Util
+      Network.Xoken.Script.NonStandard
       Paths_xoken_core
   hs-source-dirs:
       test, src
@@ -191,5 +192,6 @@ test-suite spec
     , free
     , enumset
     , bits-bytestring
+    , hspec-expectations-pretty-diff
   default-language: Haskell2010
   build-tool-depends: hspec-discover:hspec-discover

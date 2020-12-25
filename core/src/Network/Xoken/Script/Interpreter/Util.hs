@@ -23,15 +23,15 @@ import           Crypto.Secp256k1               ( Sig
                                                 , PubKey
                                                 )
 import qualified Data.ByteString               as BS
+import           Test.QuickCheck                ( Arbitrary
+                                                , sublistOf
+                                                , arbitrary
+                                                )
 import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.SigHash
 import           Network.Xoken.Constants
 import           Network.Xoken.Transaction.Common
 import           Network.Xoken.Crypto.Signature
-import           Test.QuickCheck                ( Arbitrary
-                                                , sublistOf
-                                                , arbitrary
-                                                )
 
 -- uses reversed MPI without lengthz
 -- MPI is 4B length and big endian number with most significant bit for sign
@@ -263,7 +263,21 @@ instance Arbitrary Ctx where
     (flags, consensus) <- arbitrary
     pure $ Ctx { script_flags     = flags
                , consensus        = consensus
-               , sig_checker_data = undefined
+               , sig_checker_data = checker_data
                }
 
+checker_data = SigCheckerData { net        = bsv
+                              , tx         = Tx 0 [] [] 0
+                              , nIn        = 0
+                              , amount     = 0
+                              , inputIndex = 0
+                              }
+
 flag_equal x v c = c { script_flags = put x v (script_flags c) }
+
+rawNumToWords :: Integer -> [Word8]
+rawNumToWords n | n < 0     = error "negative n"
+                | otherwise = reverse $ unroll n
+
+rawNumToBS = BS.pack . rawNumToWords
+opPush = opPushData . rawNumToBS

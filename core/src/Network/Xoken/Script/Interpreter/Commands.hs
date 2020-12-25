@@ -5,8 +5,7 @@ import           Data.Maybe                     ( mapMaybe )
 import           Data.Word                      ( Word32
                                                 , Word64
                                                 )
-import           Data.EnumBitSet                ( get
-                                                )
+import           Data.EnumBitSet                ( get )
 import           Data.Foldable                  ( toList )
 import           Control.Monad.Free             ( Free(Pure, Free)
                                                 , liftF
@@ -120,18 +119,20 @@ data InterpreterError
   deriving (Show, Eq)
 
 data Env = Env
-  { stack                  :: Stack Elem
-  , alt_stack              :: Stack Elem
-  , branch_stack           :: Stack Branch
-  , failed_branches        :: Word32
-  , non_top_level_return   :: Bool
-  , script                 :: [ScriptOp]
-  , op_count               :: Word64
+  { stack                :: Stack Elem
+  , alt_stack            :: Stack Elem
+  , branch_stack         :: Stack Branch
+  , failed_branches      :: Word32
+  , non_top_level_return :: Bool
+  , ops_left             :: [ScriptOp]
+  , script_copy          :: [ScriptOp]
+  , op_count             :: Word64
   }
 
 stack_equal x e = e { stack = x }
 alt_stack_equal x e = e { alt_stack = x }
-script_equal x e = e { script = scriptOps x }
+script_equal x e = e { ops_left = ops, script_copy = ops }
+  where ops = scriptOps x
 
 data Branch = Branch
   { satisfied      :: Bool
@@ -215,7 +216,7 @@ interpretCmd ctx = go where
     Flag f k          -> go (k $ flag f) e
     Flags           k -> go (k $ script_flags ctx) e
     Checker         k -> go (k $ txSigChecker $ sig_checker_data ctx) e
-    ScriptEndToHash k -> go (k $ script e) e
+    ScriptEndToHash k -> go (k $ script_copy e) e
     OpCount         k -> go (k $ op_count e) e
     AddToOpCount x m  -> if opcount' > maxOpsPerScript genesis c
       then (e { op_count = opcount' }, Error InvalidOpCount)

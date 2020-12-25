@@ -22,12 +22,19 @@ import           Data.ByteString.Builder        ( toLazyByteString
 import qualified Data.Bits                     as B
 import qualified Data.ByteString               as BS
 import qualified Data.Sequence                 as Seq
-import           Test.Hspec
+import           Test.Hspec                     ( Arg
+                                                , SpecWith
+                                                , Spec
+                                                , it
+                                                , describe
+                                                )
 import           Test.QuickCheck
+import           Test.Hspec.Expectations.Pretty
 import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.Interpreter
 import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.Util
+import           Network.Xoken.Script.NonStandard
 import           Network.Xoken.Test
 
 default_ctx = Ctx
@@ -35,17 +42,58 @@ default_ctx = Ctx
                        .|. mandatoryScriptFlags
                        .|. standardScriptFlags
   , consensus        = True
-  , sig_checker_data = undefined
+  , sig_checker_data = checker_data
   }
 
-opPush = opPushData . rawNumToBS
+p2pkh sig (pk, hash) =
+  ( sigScript sig pk
+  , Script [OP_DUP, OP_HASH160, opPush hash, OP_EQUALVERIFY, OP_CHECKSIG]
+  )
+
+error_p2pkh sig (pk, hash) = error_msg
+  $ uncurry (verifyScriptWith default_ctx empty_env) (p2pkh sig (pk, hash))
+
+sigs =
+  [ 0x30440220047b2603f091b401f1fe079d918774bb72bd796a3b3eb9404598047579d8823b02205cf114e118261b0da97b271a13d17e5438edb76e0b5ba44b0a451cd5b881a77641
+  , 0x30450221008e35427941f9425baccb4b0ad8c9e3e1cde64800334c75b85137e15a6dbe42ad02205c815e3f22ea00b250a36028ecb154bf0d4b6fd91310f36658ebf7f73b5a1b4441
+  ]
+
+key_hash_pairs =
+  [ ( 0x03aaecc9a94da238bfced1e2d6f2cf904e47f225b76630db3c1be69919ff177651
+    , 0x2e917f5ca5c03ae077d7d93998daf43f2578b62a
+    )
+  ]
+
+error_msg :: (Env, Maybe InterpreterError) -> Maybe ErrorMsg
+error_msg (env, error) = case error of
+  Just x -> Just $ ErrorMsg { about = x, position = take 4 (ops_left env) }
+  _      -> Nothing
+
+data ErrorMsg = ErrorMsg
+  { about    :: InterpreterError
+  , position :: [ScriptOp]
+  }
+  deriving (Eq, Show)
+
+sigScript sig pk = Script [opPush sig, opPush pk]
 
 spec :: Spec
 spec = do
   describe "verify script" $ do
-    it "empty scripts" $ forAll arbitrary $ \ctx ->
-      verifyScriptWith ctx empty_env (Script []) (Script [])
-        `shouldBe` Just EvalFalse
+    it "verifies p2pkh" $ do
+      error_p2pkh (sigs !! 0) (key_hash_pairs !! 0) `shouldBe` Nothing
+      error_p2pkh (sigs !! 1) (key_hash_pairs !! 0) `shouldBe` Nothing
+    it "verifies non standard scripts" $ forAll arbitrary $ \ctx -> do
+      let
+        sig
+          = 0x30450221008c88680491a30d0c7b13abd861655bdbf0aaaea36c993d4756597a6d561b37b2022052f237af8b9038ad9f732c9ae76bdedabcdb5574dad3d8b5e44b749fd9ed92d141
+        pk =
+          0x0348beb13ed8235a93223c57034642f8c596ef2b1ea2dcc17f2ccefd4de6977c91
+      error_msg (verifyScriptWith ctx empty_env (Script []) (Script []))
+        `shouldBe` Just (ErrorMsg { about = EvalFalse, position = [] })
+      error_msg
+          (verifyScriptWith ctx empty_env (sigScript sig pk) non_standard_0)
+        `shouldBe` Nothing
   describe "interpreter dependencies" $ do
     it "still has wrong shiftR"
       $          (BS.pack [1, 2, 3] `shiftR` 8)
@@ -443,10 +491,9 @@ testNoFlags r ops =
     $ forAll arbitrary
     $ \ctx ->
         snd
-            (interpretWith (ctx { script_flags = empty })
+            (interpretWith (ctx { script_flags = Data.EnumBitSet.empty })
                            (script_equal (Script ops) empty_env)
             )
           `shouldBe` r
 
-rawNumToBS = BS.reverse . BS.pack . unroll
 hex = toLazyByteString . byteStringHex

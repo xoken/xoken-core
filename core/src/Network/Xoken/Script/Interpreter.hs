@@ -47,19 +47,17 @@ import           Network.Xoken.Script.Interpreter.Util
 fixed_shiftR :: BS.ByteString -> Int -> BS.ByteString
 fixed_shiftR bs 0 = bs
 fixed_shiftR bs i
-  | i `mod` 8 == 0
-  = BS.take (BS.length bs) $ BS.append
-    (BS.replicate (i `div` 8) 0)
-    (BS.take (BS.length bs - (i `div` 8)) bs)
-  | i `mod` 8 /= 0
-  = BS.pack
-    $  take (BS.length bs)
-    $  (replicate (i `div` 8) (0 :: Word8))
-    ++ (go (i `mod` 8) 0 $ BS.unpack (BS.take (BS.length bs - (i `div` 8)) bs))
+  | i `mod` 8 == 0 = BS.take len $ BS.append (BS.replicate i8 0) rest
+  | i `mod` 8 /= 0 = BS.pack $ take len $ replicate i8 0 ++ go
+    0
+    (BS.unpack rest)
  where
-  go _ _  []         = []
-  go j w1 (w2 : wst) = (maskR j w1 w2) : go j w2 wst
-  maskR j w1 w2 = (shiftL w1 (8 - j)) .|. (shiftR w2 j)
+  rest    = BS.take (len - i8) bs
+  len     = BS.length bs
+  (i8, j) = i `divMod` 8
+  go _  []         = []
+  go w1 (w2 : wst) = maskR w1 w2 : go w2 wst
+  maskR w1 w2 = shiftL w1 (8 - j) .|. shiftR w2 j
 {-# INLINE fixed_shiftR #-}
 
 maxScriptElementSizeBeforeGenesis = 520
@@ -91,17 +89,27 @@ standardScriptFlags = fromEnums
   , VERIFY_CHECKSEQUENCEVERIFY
   ]
 
-verifyScriptWith :: Ctx -> Env -> Script -> Script -> Maybe InterpreterError
+verifyScriptWith
+  :: Ctx -> Env -> Script -> Script -> (Env, Maybe InterpreterError)
 verifyScriptWith ctx_to_fix env sigScript pubKeyScript
-  | get VERIFY_SIGPUSHONLY fs && not (isPushOnly sigScript) = Just SigPushOnly
-  | error_sig /= Nothing                    = error_sig
-  | error_pubkey /= Nothing                 = error_pubkey
-  | empty_or_0_top (stack env_after_pubkey) = Just EvalFalse
-  | not (check_P2SH && isP2SH pubKeyScript) = checkCleanStack env_after_pubkey
-  | not (isPushOnly sigScript)              = Just SigPushOnly
-  | error_pubkey2 /= Nothing                = error_pubkey2
-  | empty_or_0_top (stack env_after_pubkey2) = Just EvalFalse
-  | otherwise                               = checkCleanStack env_after_pubkey2
+  | get VERIFY_SIGPUSHONLY fs && not (isPushOnly sigScript)
+  = (env, Just SigPushOnly)
+  | error_sig /= Nothing
+  = (env_after_sig, error_sig)
+  | error_pubkey /= Nothing
+  = (env_after_pubkey, error_pubkey)
+  | empty_or_0_top (stack env_after_pubkey)
+  = (env_after_pubkey, Just EvalFalse)
+  | not (check_P2SH && isP2SH pubKeyScript)
+  = checkCleanStack env_after_pubkey
+  | not (isPushOnly sigScript)
+  = (e', Just SigPushOnly)
+  | error_pubkey2 /= Nothing
+  = (env_after_pubkey2, error_pubkey2)
+  | empty_or_0_top (stack env_after_pubkey2)
+  = (env_after_pubkey2, Just EvalFalse)
+  | otherwise
+  = checkCleanStack env_after_pubkey2
  where
   fs = put VERIFY_STRICTENC (get ENABLE_SIGHASH_FORKID flags) flags
     where flags = script_flags ctx_to_fix
@@ -115,24 +123,27 @@ verifyScriptWith ctx_to_fix env sigScript pubKeyScript
       either (const (e', Just VerifyScriptAssertion)) (go $ stack_equal rest e')
         $ S.decode x
     _ -> (e', Just VerifyScriptAssertion)
-    where e' = if check_P2SH then env_after_sig else env
+  e' = if check_P2SH then env_after_sig else env
   empty_or_0_top s = case Seq.viewr s of
     _ Seq.:> x -> isZero x
     _          -> True
   check_P2SH = get VERIFY_P2SH fs && not genesis
-  checkCleanStack final_env
-    | not (get VERIFY_CLEANSTACK fs) = Nothing
-    | not (get VERIFY_P2SH fs) = Just VerifyScriptAssertion
-    | otherwise = ifso (Just CleanStack) $ length (stack final_env) /= 1
+  checkCleanStack final_env = (final_env, error)
+   where
+    error | not (get VERIFY_CLEANSTACK fs) = Nothing
+          | not (get VERIFY_P2SH fs) = Just VerifyScriptAssertion
+          | otherwise = ifso (Just CleanStack) $ length (stack final_env) /= 1
 
 interpretWith :: Ctx -> Env -> (Env, Maybe InterpreterError)
-interpretWith ctx env = go (script env) env
+interpretWith ctx env = case ops_left env of
+  op : rest -> go op $ env { ops_left = rest }
+  _         -> (env, Nothing)
  where
-  go (op : rest) e
+  go op e
     | signal_disabled = (e, Just DisabledOpcode)
     | execute = next
       (increment_ops op)
-      (if op == OP_CODESEPARATOR then e { script = rest } else e)
+      (if op == OP_CODESEPARATOR then e { script_copy = ops_left e } else e)
     | otherwise = case op of
       OP_IF       -> next (add_to_opcount 1 >> push_branch failed_branch) e
       OP_NOTIF    -> next (add_to_opcount 1 >> push_branch failed_branch) e
@@ -149,20 +160,20 @@ interpretWith ctx env = go (script env) env
       (failed_branches e == 0)
         && (not (non_top_level_return e) || op == OP_RETURN)
     next cmd e = case interpretCmd ctx (add_to_opcount 1 >> cmd) e of
-      (e', OK         ) -> go rest e'
+      (e', OK         ) -> interpretWith ctx e'
       (e', Error error) -> (e', Just error)
       (e', Return     ) -> (e', Nothing)
     failed_branch = Branch { satisfied = False, is_else_branch = False }
     increment_ops op | isPush op = opcode op
                      | otherwise = add_to_opcount 1 >> opcode op
-  go [] e = (e, Nothing)
 
 empty_env = Env { stack                = Seq.empty
                 , alt_stack            = Seq.empty
                 , branch_stack         = Seq.empty
                 , failed_branches      = 0
                 , non_top_level_return = False
-                , script               = []
+                , ops_left             = []
+                , script_copy          = []
                 , op_count             = 0
                 }
 
@@ -546,21 +557,21 @@ isValidSignatureEncoding sigBS = and
 checkLowDERSignature :: BS.ByteString -> Cmd ()
 checkLowDERSignature sigBS = do
   unless (isValidSignatureEncoding sigBS) (terminate SigDER)
-  unless (isLowS sigBS)                   (terminate SigHighS)
+  when (isHighS sigBS /= Just False) (terminate SigHighS)
 
-isLowS :: BS.ByteString -> Bool
-isLowS sigBS = case ecdsa_signature_parse_der_lax (BS.unpack sigBS) of
-  Just (r, s, _) -> not $ highS $ BS.pack s
-  _              -> False
+isHighS :: BS.ByteString -> Maybe Bool
+isHighS sigBS = case ecdsa_signature_parse_der_lax (BS.unpack sigBS) of
+  Right (_, s, _) -> highS (BS.pack s)
+  _               -> Nothing
  where
   highS s = case unfoldr readWord64 s of
-    [x0, x1, x2, x3] -> yes
+    [x0, x1, x2, x3] -> Just yes
      where
       no0  = x3 < d
       yes0 = x3 > d
       no   = no0 || ((x2 < c || x1 < b) && not yes0)
       yes  = yes0 || ((x1 > b || x0 > a) && not no)
-    _ -> False
+    _ -> Nothing
   a = 0xDFE92F46681B20A0
   b = 0x5D576E7357A4501D
   c = 0xFFFFFFFFFFFFFFFF
@@ -570,12 +581,13 @@ isLowS sigBS = case ecdsa_signature_parse_der_lax (BS.unpack sigBS) of
     _       -> Nothing
     where (bs1, bs2) = BS.splitAt 8 bs
 
-ecdsa_signature_parse_der_lax :: [Word8] -> Maybe ([Word8], [Word8], [Word8])
+ecdsa_signature_parse_der_lax
+  :: [Word8] -> Either String ([Word8], [Word8], [Word8])
 ecdsa_signature_parse_der_lax bytes = case check_type compound_code bytes of
   Just (lenbyte : rest) -> parse_r_and_s $ if negative lenbyte
     then drop (fromIntegral $ lenbyte - 0x80) rest
     else rest
-  _ -> Nothing
+  _ -> Left "compound lenbyte"
  where
   compound_code = 0x30
   int_code      = 0x02
@@ -585,25 +597,24 @@ ecdsa_signature_parse_der_lax bytes = case check_type compound_code bytes of
   parse_r_and_s bytes = do
     (r, after_r) <- parse_int bytes
     (s, after_s) <- parse_int after_r
-    pure (r, s, after_s)
+    Right (r, s, after_s)
   parse_int bytes = case check_type int_code bytes of
     Just (lenbyte : rest) -> do
       (len, after_len) <- if negative lenbyte
         then do
           let (lenbyte', after_zeros) = drop_zeros (lenbyte - 0x80) rest
-          when (lenbyte' >= 8) Nothing
+          when (lenbyte' >= 8) (Left "lenbyte >= 8")
           parse_len 0 lenbyte' after_zeros
-        else Just (fromIntegral lenbyte, rest)
-      when (len >= 8) Nothing
+        else Right (fromIntegral lenbyte, rest)
       let (elem, after_elem) = splitAt len after_len
           compact            = dropWhile (== 0) elem
-      when (length compact > 32) Nothing
-      Just (replicate (32 - length compact) 0 ++ compact, after_elem)
-    _ -> Nothing
+      when (length compact > 32) (Left "length compact > 32")
+      Right (replicate (32 - length compact) 0 ++ compact, after_elem)
+    _ -> Left "int lenbyte"
   drop_zeros 0 bytes      = (0, bytes)
   drop_zeros n (0 : rest) = drop_zeros (n - 1) rest
   drop_zeros n bytes      = (n, bytes)
-  parse_len out 0 bytes = Just (out, bytes)
+  parse_len out 0 bytes = Right (out, bytes)
   parse_len out n (x : rest) =
     parse_len (out `shiftL` 8 + fromIntegral x) (n - 1) rest
-  parse_len out _ _ = Nothing
+  parse_len _ _ _ = Left "parse_len"
