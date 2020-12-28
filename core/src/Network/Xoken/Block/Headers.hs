@@ -30,7 +30,7 @@ module Network.Xoken.Block.Headers
 --    , splitPoint
     , connectBlocks
     , connectBlock
---    , blockLocator
+    , blockLocator
       -- * In-Memory Header Chain Store
     , HeaderMemory(..)
     , ShortBlockHash
@@ -59,9 +59,10 @@ module Network.Xoken.Block.Headers
     , blockPOW
     , headerWork
     , diffInterval
---    , blockLocatorNodes
+    , blockLocatorNodes
     , mineBlock
     , computeSubsidy
+    , getBlockHeaderMemory
     ) where
 
 import Control.Applicative ((<|>))
@@ -218,8 +219,8 @@ getAncestor hm height node
     | height > nodeHeight node = Nothing
     | otherwise = go node
   where
-    e1 = error "Could not get skip header"
-    e2 = error "Could not get previous block header"
+    e1 a = error $ "Could not get skip header " ++ show a
+    e2 a = error $ "Could not get previous block header" ++ show a 
     go walk
         | nodeHeight walk > height =
             let heightSkip = skipHeight (nodeHeight walk)
@@ -228,9 +229,9 @@ getAncestor hm height node
                    (heightSkip == height ||
                     (heightSkip > height && not (heightSkipPrev < heightSkip - 2 && heightSkipPrev >= height)))
                     then do
-                        go $ fromMaybe e1 $ getBlockHeaderMemory (nodeSkip walk) hm
+                        go $ fromMaybe (e1 (nodeSkip walk)) $ getBlockHeaderMemory (nodeSkip walk) hm
                     else
-                        go $ fromMaybe e2 $ getBlockHeaderMemory (prevBlock (nodeHeader walk)) hm
+                        go $ fromMaybe (e2 $ prevBlock $ nodeHeader $ walk) $ getBlockHeaderMemory (prevBlock (nodeHeader walk)) hm
         | otherwise = Just walk
 
 -- | Is the provided 'BlockNode' the Genesis block?
