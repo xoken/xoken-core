@@ -10,10 +10,14 @@ import           Data.Foldable                  ( toList )
 import           Control.Monad.Free             ( Free(Pure, Free)
                                                 , liftF
                                                 )
+import           Data.Text                      ( Text )
 import qualified Data.ByteString               as BS
 import qualified Data.Sequence                 as Seq
+import           Crypto.Secp256k1               ( PubKey )
 import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.Interpreter.Util
+import           Network.Xoken.Script.SigHash
+import           Network.Xoken.Crypto.Hash
 
 maxOpsPerScript :: Integral a => Bool -> Bool -> a
 maxOpsPerScript genesis consensus
@@ -57,7 +61,7 @@ data InterpreterCommand a
     -- field access
     | Flag ScriptFlag (Bool -> a)
     | Flags (ScriptFlags -> a)
-    | Checker (BaseSignatureChecker -> a)
+    | Checker (SigCheckerData -> a)
     | ScriptEndToHash ([ScriptOp] -> a)
     | Consensus (Bool -> a)
     | OpCount (Word64 -> a)
@@ -105,7 +109,8 @@ data InterpreterError
   | SigHashType
   | SigHighS
   | SigPushOnly
-  | InvalidSigOrPubKey
+  | SigEmpty
+  | InvalidSigOrPubKey String
   | PubKeyCount
   | PubKeyType
   | NonCompressedPubKey
@@ -113,7 +118,7 @@ data InterpreterError
   | NonMinimalNum
   | DisabledOpcode
   | EvalFalse
-  | VerifyScriptAssertion
+  | FailedAssertion String
   | CleanStack
   | StackSize
   deriving (Show, Eq)
@@ -213,9 +218,11 @@ interpretCmd ctx = go where
       else go (k ys) e
       where ys = mapMaybe num xs
     -- field access
-    Flag f k          -> go (k $ flag f) e
-    Flags           k -> go (k $ script_flags ctx) e
-    Checker         k -> go (k $ txSigChecker $ sig_checker_data ctx) e
+    Flag f k  -> go (k $ flag f) e
+    Flags   k -> go (k $ script_flags ctx) e
+    Checker k -> case sig_checker_data ctx of
+      Just d -> go (k d) e
+      _      -> (e, Error $ FailedAssertion "sig_checker_data /= Nothing")
     ScriptEndToHash k -> go (k $ script_copy e) e
     OpCount         k -> go (k $ op_count e) e
     AddToOpCount x m  -> if opcount' > maxOpsPerScript genesis c
@@ -308,7 +315,7 @@ flag f = liftF (Flag f id)
 flags :: Cmd ScriptFlags
 flags = liftF (Flags id)
 
-checker :: Cmd BaseSignatureChecker
+checker :: Cmd SigCheckerData
 checker = liftF (Checker id)
 
 script_end :: Cmd [ScriptOp]

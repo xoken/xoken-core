@@ -1,8 +1,10 @@
+{-# LANGUAGE NamedFieldPuns #-}
 module Network.Xoken.ScriptInterpreterSpec
   ( spec
   )
 where
 
+import qualified Data.Serialize                as S
 import           Data.Bits                      ( shiftL
                                                 , shiftR
                                                 )
@@ -16,12 +18,10 @@ import           Data.EnumBitSet                ( fromEnums
                                                 , get
                                                 , empty
                                                 )
-import           Data.ByteString.Builder        ( toLazyByteString
-                                                , byteStringHex
-                                                )
 import qualified Data.Bits                     as B
 import qualified Data.ByteString               as BS
 import qualified Data.Sequence                 as Seq
+import qualified Data.Text                     as T
 import           Test.Hspec                     ( Arg
                                                 , SpecWith
                                                 , Spec
@@ -36,64 +36,114 @@ import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.Util
 import           Network.Xoken.Script.NonStandard
 import           Network.Xoken.Test
+import           Network.Xoken.Constants
+import           Network.Xoken.Transaction.Common
+import           Network.Xoken.Util
 
 default_ctx = Ctx
   { script_flags     = fromEnums [GENESIS, UTXO_AFTER_GENESIS, VERIFY_MINIMALIF]
                        .|. mandatoryScriptFlags
                        .|. standardScriptFlags
   , consensus        = True
-  , sig_checker_data = checker_data
+  , sig_checker_data = Nothing
   }
 
-p2pkh sig (pk, hash) =
-  ( sigScript sig pk
-  , Script [OP_DUP, OP_HASH160, opPush hash, OP_EQUALVERIFY, OP_CHECKSIG]
-  )
+tx1 = Tx { txVersion = 1, txIn, txOut, txLockTime = 0 } where
+  txIn = [in1, in2]
+  in1  = TxIn { prevOutput, scriptInput, txInSequence = 4294967295 }
+   where
+    prevOutput = OutPoint
+      { outPointHash  = txHash
+        "86616fb8b2f33ed0b8798eae09f061ca6f4c6a328a3fd64c9ab71abf1da5da6d"
+      , outPointIndex = 0
+      }
+    scriptInput = S.encode non_standard_sig
+  in2 = TxIn { prevOutput, scriptInput, txInSequence = 4294967295 }
+   where
+    prevOutput = OutPoint
+      { outPointHash  = txHash
+        "33086de14341ac4a77536642fe9a68c34ebd9b5938c27b64320ec47c0ab3540d"
+      , outPointIndex = 1
+      }
+    scriptInput = S.encode tx1_sig_script_1
+  txOut = [out1, out2]
+  out1  = TxOut { outValue = 4000, scriptOutput = S.encode non_standard_pk }
+  out2  = TxOut { outValue = 9710183, scriptOutput = S.encode tx1_pk_script_1 }
+  txHash hex = case hexToTxHash $ T.pack hex of
+    Just txHash -> txHash
+    _           -> error "txHash"
 
-error_p2pkh sig (pk, hash) = error_msg
-  $ uncurry (verifyScriptWith default_ctx empty_env) (p2pkh sig (pk, hash))
+tx1_sig_script_1 = sigScript
+  0x304402201757edf38a71f134956c7ed5b2602396b4bb6c58fd3c557d3ba33f744d33278502207b90db731784d48e788e79138064ae34f10d807e38fb026599cbf5e778f08e8d41
+  0x020f330acf70e0b8ea142a813300a0a7a2204b1e6ae2587a0692e1218386e63fdc
 
-sigs =
-  [ 0x30440220047b2603f091b401f1fe079d918774bb72bd796a3b3eb9404598047579d8823b02205cf114e118261b0da97b271a13d17e5438edb76e0b5ba44b0a451cd5b881a77641
-  , 0x30450221008e35427941f9425baccb4b0ad8c9e3e1cde64800334c75b85137e15a6dbe42ad02205c815e3f22ea00b250a36028ecb154bf0d4b6fd91310f36658ebf7f73b5a1b4441
-  ]
+tx1_pk_script_1 = p2pkh 0x545a91e1839ddc232ef75f43e2e3b03b54b9b2a9
 
-key_hash_pairs =
-  [ ( 0x03aaecc9a94da238bfced1e2d6f2cf904e47f225b76630db3c1be69919ff177651
-    , 0x2e917f5ca5c03ae077d7d93998daf43f2578b62a
-    )
-  ]
+p2pkh hash =
+  Script [OP_DUP, OP_HASH160, opPush hash, OP_EQUALVERIFY, OP_CHECKSIG]
+
+context `with_data` d = context { sig_checker_data = Just d }
 
 error_msg :: (Env, Maybe InterpreterError) -> Maybe ErrorMsg
-error_msg (env, error) = case error of
-  Just x -> Just $ ErrorMsg { about = x, position = take 4 (ops_left env) }
-  _      -> Nothing
+error_msg (env, error) = go <$> error where
+  go x = ErrorMsg { name = x, position, extra = extra x }
+  position = take 4 (ops_left env)
+  extra SigNullFail    = [hex_stack]
+  extra StackUnderflow = [hex_stack]
+  extra CleanStack     = [hex_stack]
+  extra SigHighS       = [hex_stack]
+  extra _              = []
+  hex_stack = Stack $ HexElem <$> stack env
 
 data ErrorMsg = ErrorMsg
-  { about    :: InterpreterError
+  { name     :: InterpreterError
   , position :: [ScriptOp]
+  , extra    :: [ErrorMsgExtra]
   }
+  deriving (Eq, Show)
+
+newtype HexElem = HexElem { getElem :: Elem }
+  deriving Eq
+
+instance Show HexElem where
+  show = show . encodeHex . getElem
+
+data ErrorMsgExtra
+  = Stack (Stack HexElem)
+  | AltStack (Stack HexElem)
   deriving (Eq, Show)
 
 sigScript sig pk = Script [opPush sig, opPush pk]
 
+checker_data tx inputIndex = d where
+  d      = SigCheckerData { net = bsvTest, tx, inputIndex, amount }
+  amount = outValue (txOut tx !! inputIndex)
+
 spec :: Spec
 spec = do
-  describe "verify script" $ do
+  describe "verify standard scripts" $ do
     it "verifies p2pkh" $ do
-      error_p2pkh (sigs !! 0) (key_hash_pairs !! 0) `shouldBe` Nothing
-      error_p2pkh (sigs !! 1) (key_hash_pairs !! 0) `shouldBe` Nothing
-    it "verifies non standard scripts" $ forAll arbitrary $ \ctx -> do
+      let context = default_ctx `with_data` checker_data tx1 1
+          verify  = verifyScriptWith context empty_env
+      (name <$> error_msg (verify tx1_sig_script_1 tx1_pk_script_1))
+        `shouldBe` Just SigHighS -- uncertain
+  describe "verify non standard scripts" $ do
+    it "verifies empty scripts" $ do
+      let verify = verifyScriptWith default_ctx empty_env
+      (name <$> error_msg (verify (Script []) (Script [])))
+        `shouldBe` Just EvalFalse
+    it "verifies multisig" $ do
+      let context = default_ctx `with_data` checker_data tx1 0
+          verify  = verifyScriptWith context empty_env
+      error_msg (verify non_standard_sig non_standard_pk) `shouldBe` Nothing
+    it "verifies complicated pk script" $ forAll arbitrary $ \ctx -> do
       let
         sig
           = 0x30450221008c88680491a30d0c7b13abd861655bdbf0aaaea36c993d4756597a6d561b37b2022052f237af8b9038ad9f732c9ae76bdedabcdb5574dad3d8b5e44b749fd9ed92d141
         pk =
           0x0348beb13ed8235a93223c57034642f8c596ef2b1ea2dcc17f2ccefd4de6977c91
-      error_msg (verifyScriptWith ctx empty_env (Script []) (Script []))
-        `shouldBe` Just (ErrorMsg { about = EvalFalse, position = [] })
-      error_msg
-          (verifyScriptWith ctx empty_env (sigScript sig pk) non_standard_0)
-        `shouldBe` Nothing
+        verify = verifyScriptWith ctx empty_env
+      error_msg (verify (sigScript sig pk) non_standard_0) `shouldBe` Nothing
   describe "interpreter dependencies" $ do
     it "still has wrong shiftR"
       $          (BS.pack [1, 2, 3] `shiftR` 8)
@@ -495,5 +545,3 @@ testNoFlags r ops =
                            (script_equal (Script ops) empty_env)
             )
           `shouldBe` r
-
-hex = toLazyByteString . byteStringHex

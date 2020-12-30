@@ -19,10 +19,13 @@ import           Data.Bits                      ( Bits
                                                 , shiftL
                                                 , shiftR
                                                 )
+import           Data.ByteString.Builder        ( toLazyByteString
+                                                , byteStringHex
+                                                )
+import qualified Data.ByteString               as BS
 import           Crypto.Secp256k1               ( Sig
                                                 , PubKey
                                                 )
-import qualified Data.ByteString               as BS
 import           Test.QuickCheck                ( Arbitrary
                                                 , sublistOf
                                                 , arbitrary
@@ -143,30 +146,17 @@ instance Arbitrary ScriptFlags where
 type Signature = BS.ByteString
 type SighashForkid = Bool
 
-data BaseSignatureChecker = BaseSignatureChecker
-  { checkSig      :: Sig -> SigHash -> PubKey -> Script -> SighashForkid -> Bool
-  , checkLockTime :: BN -> Bool
-  , checkSequence :: BN -> Bool
-  }
-
 data SigCheckerData = SigCheckerData
   { net        :: Network
   , tx         :: Tx
-  , nIn        :: Int
-  , amount     :: Word64
   , inputIndex :: Int
+  , amount     :: Word64
   }
 
 instance Show SigCheckerData where
   show _ = "SigCheckerData"
 
-txSigChecker :: SigCheckerData -> BaseSignatureChecker
-txSigChecker d = BaseSignatureChecker { checkSig      = checkSigFull d
-                                      , checkLockTime = checkLockTimeFull d
-                                      , checkSequence = checkSequenceFull d
-                                      }
-
-checkSigFull
+checkSig
   :: SigCheckerData
   -> Sig
   -> SigHash
@@ -174,23 +164,23 @@ checkSigFull
   -> Script
   -> SighashForkid
   -> Bool
-checkSigFull d sig sighash pubkey script forkid = verifyHashSig hash sig pubkey
+checkSig d sig sighash pubkey script forkid = verifyHashSig hash sig pubkey
  where
   hash = txSigHash (net d) (tx d) script (amount d) (inputIndex d) sighash
 
-checkLockTimeFull :: SigCheckerData -> BN -> Bool
-checkLockTimeFull d n =
+checkLockTime :: SigCheckerData -> BN -> Bool
+checkLockTime d n =
   ((tx_n < threshold && n < threshold) || (tx_n >= threshold && n >= threshold))
     && (n <= tx_n)
-    && (sequenceFinal /= txInSequence (txIn txn !! nIn d))
+    && (sequenceFinal /= txInSequence (txIn txn !! inputIndex d))
  where
   txn           = tx d
   tx_n          = fromIntegral $ txLockTime txn
   threshold     = 500000000
   sequenceFinal = 0xffffffff
 
-checkSequenceFull :: SigCheckerData -> BN -> Bool
-checkSequenceFull d n =
+checkSequence :: SigCheckerData -> BN -> Bool
+checkSequence d n =
   (txVersion txn >= 2)
     && (txToSequence .&. sequenceLockTimeDisableFlag == 0)
     && (  (txToSequenceMasked < flag && nSequenceMasked < bnflag)
@@ -198,7 +188,7 @@ checkSequenceFull d n =
        )
     && (nSequenceMasked <= fromIntegral txToSequenceMasked)
  where
-  txToSequence = fromIntegral $ txInSequence (txIn txn !! nIn d) :: Int
+  txToSequence = fromIntegral $ txInSequence (txIn txn !! inputIndex d) :: Int
   nLockTimeMask = fromIntegral flag .|. sequenceLockTimeMask :: Word32
   txToSequenceMasked = txToSequence .&. fromIntegral nLockTimeMask :: Int
   nSequenceMasked             = n .&. fromIntegral nLockTimeMask :: BN
@@ -254,7 +244,7 @@ ifso y x = if x then y else Nothing
 data Ctx = Ctx
   { script_flags     :: ScriptFlags
   , consensus        :: Bool
-  , sig_checker_data :: SigCheckerData
+  , sig_checker_data :: Maybe SigCheckerData
   }
   deriving Show
 
@@ -263,15 +253,8 @@ instance Arbitrary Ctx where
     (flags, consensus) <- arbitrary
     pure $ Ctx { script_flags     = flags
                , consensus        = consensus
-               , sig_checker_data = checker_data
+               , sig_checker_data = Nothing
                }
-
-checker_data = SigCheckerData { net        = bsv
-                              , tx         = Tx 0 [] [] 0
-                              , nIn        = 0
-                              , amount     = 0
-                              , inputIndex = 0
-                              }
 
 flag_equal x v c = c { script_flags = put x v (script_flags c) }
 
@@ -281,3 +264,4 @@ rawNumToWords n | n < 0     = error "negative n"
 
 rawNumToBS = BS.pack . rawNumToWords
 opPush = opPushData . rawNumToBS
+hex = toLazyByteString . byteStringHex

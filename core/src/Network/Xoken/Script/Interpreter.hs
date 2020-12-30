@@ -43,6 +43,8 @@ import           Network.Xoken.Script.Common
 import           Network.Xoken.Script.SigHash
 import           Network.Xoken.Script.Interpreter.Commands
 import           Network.Xoken.Script.Interpreter.Util
+import           Network.Xoken.Constants
+import           Network.Xoken.Util
 
 fixed_shiftR :: BS.ByteString -> Int -> BS.ByteString
 fixed_shiftR bs 0 = bs
@@ -120,9 +122,10 @@ verifyScriptWith ctx_to_fix env sigScript pubKeyScript
   (env_after_pubkey , error_pubkey ) = go env_after_sig pubKeyScript
   (env_after_pubkey2, error_pubkey2) = case Seq.viewr $ stack e' of
     rest Seq.:> x ->
-      either (const (e', Just VerifyScriptAssertion)) (go $ stack_equal rest e')
+      either (const (e', Just $ FailedAssertion "elem decodes as script"))
+             (go $ stack_equal rest e')
         $ S.decode x
-    _ -> (e', Just VerifyScriptAssertion)
+    _ -> (e', Just $ FailedAssertion "stack not empty")
   e' = if check_P2SH then env_after_sig else env
   empty_or_0_top s = case Seq.viewr s of
     _ Seq.:> x -> isZero x
@@ -131,7 +134,7 @@ verifyScriptWith ctx_to_fix env sigScript pubKeyScript
   checkCleanStack final_env = (final_env, error)
    where
     error | not (get VERIFY_CLEANSTACK fs) = Nothing
-          | not (get VERIFY_P2SH fs) = Just VerifyScriptAssertion
+          | not (get VERIFY_P2SH fs) = Just $ FailedAssertion "VERIFY_P2SH set"
           | otherwise = ifso (Just CleanStack) $ length (stack final_env) /= 1
 
 interpretWith :: Ctx -> Env -> (Env, Maybe InterpreterError)
@@ -161,7 +164,7 @@ interpretWith ctx env = case ops_left env of
         && (not (non_top_level_return e) || op == OP_RETURN)
     next cmd e = case interpretCmd ctx (add_to_opcount 1 >> cmd) e of
       (e', OK         ) -> interpretWith ctx e'
-      (e', Error error) -> (e', Just error)
+      (_ , Error error) -> (env, Just error)
       (e', Return     ) -> (e', Nothing)
     failed_branch = Branch { satisfied = False, is_else_branch = False }
     increment_ops op | isPush op = opcode op
@@ -408,10 +411,7 @@ nop = flags >>= \fs -> when (get VERIFY_DISCOURAGE_UPGRADABLE_NOPS fs)
                             (terminate DiscourageUpgradableNOPs)
 
 maybenop
-  :: ScriptFlag
-  -> (BaseSignatureChecker -> BN -> Bool)
-  -> (BN -> Bool)
-  -> Cmd ()
+  :: ScriptFlag -> (SigCheckerData -> BN -> Bool) -> (BN -> Bool) -> Cmd ()
 maybenop flag check enabled = flags >>= \fs ->
   if not (get flag fs) || get UTXO_AFTER_GENESIS fs
     then nop
@@ -435,14 +435,22 @@ checksig finalize = pop_n 2 >>= \[sigBS, pubKeyBS] -> do
     verifynull = get VERIFY_NULLFAIL fs
   singlesig finalize check sigBS pubKeyBS verifynull
 
-singlesig finalize check sigBS pubKeyBS verifynull =
-  case (importSig (BS.init sigBS), importPubKey pubKeyBS) of
-    (Just sig, Just pubKey) -> do
-      let success = check sig (sigHash sigBS) pubKey
+singlesig finalize check sigBS pubKeyBS verifynull = do
+  d <- checker
+  case (decodeTxSig (net d) sigBS, importPubKey pubKeyBS) of
+    (Right (TxSignature sig sh), Just pubKey) -> do
+      {-script <- script_end
+      let
+        hash =
+          txSigHash (net d) (tx d) (Script script) (amount d) (inputIndex d) sh
+      terminate $ TxHash hash-}
+      let success = check sig sh pubKey
       when (not success && verifynull && BS.length sigBS > 0)
            (terminate SigNullFail)
       finalize success
-    _ -> terminate InvalidSigOrPubKey
+    (Right TxSignatureEmpty, _) -> terminate SigEmpty
+    (Left  msg             , _) -> terminate $ InvalidSigOrPubKey msg
+    _                           -> terminate $ InvalidSigOrPubKey ""
 
 checkmultisig :: (Bool -> Cmd ()) -> Cmd ()
 checkmultisig finalize = do
@@ -469,8 +477,9 @@ checkmultisig finalize = do
       verifynull = get VERIFY_NULLFAIL fs
       check sig sighash pubKey =
         checkSig impl sig sighash pubKey (Script script') forkid
-  x <- pop -- bug extra value
-  when (get VERIFY_NULLDUMMY fs && BS.length x > 0) (terminate SigNullDummy)
+  bug_extra_value <- pop
+  when (get VERIFY_NULLDUMMY fs && BS.length bug_extra_value > 0)
+       (terminate SigNullDummy)
   multisig finalize check sigs keys verifynull
 
 multisig finalize check sigs keys verifynull = case (sigs, keys) of
