@@ -11,8 +11,8 @@ Portability : POSIX
 This module defines various utility functions used across the library.
 -}
 module Network.Xoken.Util
-      -- * ByteString Helpers
-    ( bsToInteger
+    ( -- * ByteString Helpers
+      bsToInteger
     , integerToBS
     , encodeHex
     , decodeHex
@@ -74,6 +74,9 @@ decodeHex :: Text -> Maybe ByteString
 decodeHex text =
     let (x, b) = B16.decode (E.encodeUtf8 text)
      in guard (b == BS.empty) >> return x
+
+--decodeHex :: Text -> Maybe ByteString
+--decodeHex = eitherToMaybe . B16.decode . E.encodeUtf8
 
 -- | Obtain 'Int' bits from beginning of 'ByteString'. Resulting 'ByteString'
 -- will be smallest required to hold that many bits, padded with zeroes to the

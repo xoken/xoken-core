@@ -66,6 +66,8 @@ library
       Network.Xoken.Transaction.Builder
       Network.Xoken.Transaction.Coinbase
       Network.Xoken.Script.Interpreter
+      Network.Xoken.Script.Interpreter.Commands
+      Network.Xoken.Script.Interpreter.Util
       Paths_xoken_core
       
   ghc-options:  -fprof-auto -fprof-cafs -rtsopts -O2 -threaded -with-rtsopts=-N
@@ -101,6 +103,9 @@ library
     , monad-loops
     , serialise
     , free
+    , enumset
+    , bits-bytestring
+    , secp256k1-haskell
     , siphash
   default-language: Haskell2010
 
@@ -119,6 +124,7 @@ test-suite spec
       Network.Xoken.KeysSpec
       Network.Xoken.NetworkSpec
       Network.Xoken.ScriptSpec
+      Network.Xoken.ScriptInterpreterSpec
       Network.Xoken.TransactionSpec
       Network.Xoken.UtilSpec
       Network.Xoken.Address
@@ -157,8 +163,9 @@ test-suite spec
       Network.Xoken.Transaction.Common
       Network.Xoken.Util
       Network.Xoken.Script.Interpreter
-
-
+      Network.Xoken.Script.Interpreter.Commands
+      Network.Xoken.Script.Interpreter.Util
+      Network.Xoken.Script.NonStandard
       Paths_xoken_core
   hs-source-dirs:
       test, src
@@ -190,6 +197,9 @@ test-suite spec
     , transformers
     , conduit
     , free
+    , enumset
+    , bits-bytestring
+    , hspec-expectations-pretty-diff
     , siphash
   default-language: Haskell2010
   build-tool-depends: hspec-discover:hspec-discover

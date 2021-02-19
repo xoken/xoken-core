@@ -85,11 +85,11 @@ arbitraryScriptOp =
         , return OP_2OVER
         , return OP_2ROT
         , return OP_2SWAP
-        -- Splice
+        -- Data manipulation
         , return OP_CAT
-        , return OP_SUBSTR
-        , return OP_LEFT
-        , return OP_RIGHT
+        , return OP_SPLIT
+        , return OP_NUM2BIN
+        , return OP_BIN2NUM
         , return OP_SIZE
         -- Bitwise logic
         , return OP_INVERT

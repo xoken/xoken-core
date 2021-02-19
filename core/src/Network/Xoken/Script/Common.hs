@@ -28,6 +28,7 @@ module Network.Xoken.Script.Common
     , decodeOutputBS
     , decodeOutputScript
     , toP2SH
+    , pushDataType
     , isPushOp
     , opPushData
     , intToScriptOp
@@ -84,7 +85,7 @@ data PushDataType
     | OPDATA2
       -- | next four bytes contains the number of bytes to be pushed
     | OPDATA4
-    deriving (Show, Read, Eq, Generic, Hashable)
+    deriving (Show, Read, Eq, Ord, Generic, Hashable)
 
 -- | Data type representing an operator allowed inside a 'Script'.
 data ScriptOp
@@ -140,11 +141,11 @@ data ScriptOp
     | OP_2OVER
     | OP_2ROT
     | OP_2SWAP
-      -- Splice
+      -- Data manipulation
     | OP_CAT
-    | OP_SUBSTR
-    | OP_LEFT
-    | OP_RIGHT
+    | OP_SPLIT
+    | OP_NUM2BIN
+    | OP_BIN2NUM
     | OP_SIZE
       -- Bitwise logic
     | OP_INVERT
@@ -209,7 +210,7 @@ data ScriptOp
     | OP_PUBKEYHASH
     | OP_PUBKEY
     | OP_INVALIDOPCODE !Word8
-    deriving (Show, Read, Eq, Generic, Hashable)
+    deriving (Show, Read, Eq, Ord, Generic, Hashable)
 
 instance Serialize ScriptOp where
     get = go =<< (fromIntegral <$> getWord8)
@@ -280,11 +281,11 @@ instance Serialize ScriptOp where
             | op == 0x7b = return OP_ROT
             | op == 0x7c = return OP_SWAP
             | op == 0x7d = return OP_TUCK
-            -- Splice
+            -- Data manipulation
             | op == 0x7e = return OP_CAT
-            | op == 0x7f = return OP_SUBSTR
-            | op == 0x80 = return OP_LEFT
-            | op == 0x81 = return OP_RIGHT
+            | op == 0x7f = return OP_SPLIT
+            | op == 0x80 = return OP_NUM2BIN
+            | op == 0x81 = return OP_BIN2NUM
             | op == 0x82 = return OP_SIZE
             -- Bitwise logic
             | op == 0x83 = return OP_INVERT
@@ -426,11 +427,11 @@ instance Serialize ScriptOp where
             OP_ROT -> putWord8 0x7b
             OP_SWAP -> putWord8 0x7c
             OP_TUCK -> putWord8 0x7d
-        -- Splice
+        -- Data manipulation
             OP_CAT -> putWord8 0x7e
-            OP_SUBSTR -> putWord8 0x7f
-            OP_LEFT -> putWord8 0x80
-            OP_RIGHT -> putWord8 0x81
+            OP_SPLIT -> putWord8 0x7f
+            OP_NUM2BIN -> putWord8 0x80
+            OP_BIN2NUM -> putWord8 0x81
             OP_SIZE -> putWord8 0x82
         -- Bitwise Logic
             OP_INVERT -> putWord8 0x83
@@ -517,16 +518,20 @@ isPushOp op =
         OP_16 -> True
         _ -> False
 
+-- | Check optimal PushDataType for given length.
+pushDataType :: Int -> Maybe PushDataType
+pushDataType len
+    | len <= 0x4b = Just OPCODE
+    | len <= 0xff = Just OPDATA1
+    | len <= 0xffff = Just OPDATA2
+    | len <= 0xffffffff = Just OPDATA4
+    | otherwise = Nothing
+
 -- | Optimally encode data using one of the 4 types of data pushing opcodes.
 opPushData :: ByteString -> ScriptOp
-opPushData bs
-    | len <= 0x4b = OP_PUSHDATA bs OPCODE
-    | len <= 0xff = OP_PUSHDATA bs OPDATA1
-    | len <= 0xffff = OP_PUSHDATA bs OPDATA2
-    | len <= 0xffffffff = OP_PUSHDATA bs OPDATA4
-    | otherwise = error "opPushData: payload size too big"
-  where
-    len = B.length bs
+opPushData bs = case pushDataType (B.length bs) of
+    Just x -> OP_PUSHDATA bs x
+    _ -> error "opPushData: payload size too big"
 
 -- | Transforms integers @[1 .. 16]@ to 'ScriptOp' @[OP_1 .. OP_16]@.
 intToScriptOp :: Int -> ScriptOp

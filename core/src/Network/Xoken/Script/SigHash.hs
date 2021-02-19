@@ -251,8 +251,8 @@ decodeTxSig net bs =
         Just sig -> do
             let sh = fromIntegral $ BS.last bs
             when (isSigHashUnknown sh) $ Left "Non-canonical signature: unknown hashtype byte"
-            when (isNothing (getSigHashForkId net) && hasForkIdFlag sh) $
-                Left "Non-canonical signature: invalid network for forkId"
+            --when (isNothing (getSigHashForkId net) && hasForkIdFlag sh) $
+            --    Left "Non-canonical signature: invalid network for forkId"
             return $ TxSignature sig sh
         Nothing -> Left "Non-canonical signature: could not parse signature"
 

@@ -29,31 +29,24 @@ module Network.Xoken.Transaction.Common
     ) where
 
 import qualified Codec.Serialise as CBOR
-import Control.Applicative ((<|>))
-import Control.Monad ((<=<), forM_, guard, liftM2, mzero, replicateM)
+import Control.Monad ((<=<), forM_, liftM2, mzero, replicateM)
 import Data.Aeson as A
 import Data.Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Short as BSS
-import Data.Char
 import Data.Hashable (Hashable)
-import Data.List (foldl')
-import Data.List as L
 import Data.Maybe (fromMaybe, maybe)
 import Data.Serialize as S
 import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
 import qualified Data.Text as T
-import Data.Word (Word32, Word64)
 import Data.Word
 import GHC.Generics
 import Network.Xoken.Crypto.Hash
 import Network.Xoken.Network.Common
 import Network.Xoken.Script.Common
 import Network.Xoken.Util
-import Numeric as N
 import Text.Read as R
 
 -- | Transaction id: hash of transaction excluding witness data.
