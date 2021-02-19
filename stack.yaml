@@ -1,26 +1,25 @@
 resolver: lts-14.7
 allow-newer: true
 packages:
-    - core
+  - core
 
 extra-deps:
-    - serialise-0.2.0.0
-    - cborg-0.2.0.0
-    - timers-updatable-0.2.0.2
-    - time-units-1.0.0
-    - digest-pure-0.0.3
-    - DRBG-0.5.5
-    - stm-containers-1.0.1
-    - either-unwrap-1.1
-    - raaz-0.2.1
-    - network-2.8.0.1
-    - queue-0.1.2
-    - stm-hamt-1.1.2
-    - primitive-0.6.4.0
-    - primitive-extras-0.6.6
-    - deferred-folds-0.6.12
-    - focus-1
-    - tinylog-0.15.0
-    - secp256k1-haskell-0.5.0
-    - bits-bytestring-0.1.0.1@sha256:ba1a108bfa2788a80c3be434c2d2b8bc2ed791be54b9164d4b92898ba001e1fa,1825
-
+  - serialise-0.2.0.0
+  - cborg-0.2.0.0
+  - timers-updatable-0.2.0.2
+  - time-units-1.0.0
+  - digest-pure-0.0.3
+  - DRBG-0.5.5
+  - stm-containers-1.0.1
+  - either-unwrap-1.1
+  - raaz-0.2.1
+  - network-2.8.0.1
+  - queue-0.1.2
+  - stm-hamt-1.1.2
+  - primitive-0.6.4.0
+  - primitive-extras-0.6.6
+  - deferred-folds-0.6.12
+  - focus-1
+  - tinylog-0.15.0
+  - bits-bytestring-0.1.0.1
+  - secp256k1-haskell-0.5.0

@@ -141,9 +141,7 @@ data InvType
     | InvTx -- ^ transaction
     | InvBlock -- ^ block
     | InvMerkleBlock -- ^ filtered block
-    | InvWitnessTx -- ^ segwit transaction
-    | InvWitnessBlock -- ^ segwit block
-    | InvWitnessMerkleBlock -- ^ segwit filtere block
+    | InvCompactBlock -- ^ BIP-152
     deriving (Eq, Show, Read)
 
 instance Serialize InvType where
@@ -155,11 +153,8 @@ instance Serialize InvType where
                 1 -> return InvTx
                 2 -> return InvBlock
                 3 -> return InvMerkleBlock
-                _
-                    | x == 1 `shiftL` 30 + 1 -> return InvWitnessTx
-                    | x == 1 `shiftL` 30 + 2 -> return InvWitnessBlock
-                    | x == 1 `shiftL` 30 + 3 -> return InvWitnessMerkleBlock
-                    | otherwise -> fail "bitcoinGet InvType: Invalid Type"
+                4 -> return InvCompactBlock
+                _ -> fail "bitcoinGet InvType: Invalid Type"
     put x =
         putWord32le $
         case x of
@@ -167,9 +162,7 @@ instance Serialize InvType where
             InvTx -> 1
             InvBlock -> 2
             InvMerkleBlock -> 3
-            InvWitnessTx -> 1 `shiftL` 30 + 1
-            InvWitnessBlock -> 1 `shiftL` 30 + 2
-            InvWitnessMerkleBlock -> 1 `shiftL` 30 + 3
+            InvCompactBlock -> 4
 
 -- | Invectory vectors represent hashes identifying objects such as a 'Block' or
 -- a 'Tx'. They notify other peers about new data or data they have otherwise
@@ -482,6 +475,10 @@ data MessageCommand
     | MCMempool
     | MCReject
     | MCSendHeaders
+    | MCSendCompact
+    | MCCompactBlock
+    | MCGetBlockTxns
+    | MCBlockTxns
     | MCOther ByteString
     deriving (Eq)
 
@@ -531,6 +528,10 @@ stringToCommand str =
         "mempool" -> MCMempool
         "reject" -> MCReject
         "sendheaders" -> MCSendHeaders
+        "sendcmpct" -> MCSendCompact
+        "cmpctblock" -> MCCompactBlock
+        "getblocktxn" -> MCGetBlockTxns
+        "blocktxn" -> MCBlockTxns
         _ -> MCOther str
 
 -- | Convert a 'MessageCommand' to its string representation.
@@ -560,6 +561,10 @@ commandToString mc =
         MCMempool -> "mempool"
         MCReject -> "reject"
         MCSendHeaders -> "sendheaders"
+        MCSendCompact -> "sendcmpct"
+        MCCompactBlock -> "cmpctblock"
+        MCGetBlockTxns -> "getblocktxn"
+        MCBlockTxns -> "blocktxn"
         MCOther c -> c
 
 -- | Pack a string 'MessageCommand' so that it is exactly 12-bytes long.

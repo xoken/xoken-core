@@ -22,11 +22,14 @@ module Network.Xoken.Block
     , genesisMap
     , genesisNode
     -- , genesisBlock
+    , headerWork
+    , isValidPOW
     , connectBlocks
     , connectBlock
     , parentBlock
-    , splitPoint
-    , blockLocator
+    , getNextWorkRequired
+--    , splitPoint
+--    , blockLocator
       -- * Merkle Blocks
     , MerkleBlock(..)
     , MerkleRoot

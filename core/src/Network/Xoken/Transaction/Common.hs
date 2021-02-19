@@ -31,6 +31,7 @@ module Network.Xoken.Transaction.Common
 import qualified Codec.Serialise as CBOR
 import Control.Monad ((<=<), forM_, liftM2, mzero, replicateM)
 import Data.Aeson as A
+import Data.Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Short as BSS
@@ -91,10 +92,16 @@ hexToTxHash hex = do
     h <- either (const Nothing) Just (S.decode bs)
     return $ TxHash h
 
-type TxShortHash = BSS.ShortByteString
+type TxShortHash = Word32
 
-getTxShortHash :: TxHash -> Word8 -> TxShortHash
-getTxShortHash (TxHash h) numbits = BSS.toShort $ B.take (fromIntegral numbits) (S.encode h)
+getTxShortHash :: TxHash -> Int -> TxShortHash
+getTxShortHash (TxHash h) numbits = do
+    case runGet getWord32host (S.encode h) of
+        Left e -> 0
+        Right num ->
+            if numbits > 32
+                then 0
+                else shiftR num (32 - numbits)
 
 -- | Data type representing a transaction.
 data Tx =
@@ -251,3 +258,5 @@ genesisTx = Tx 1 [txin] [txout] locktime
         "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb" ++
         "649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f"
     z = "0000000000000000000000000000000000000000000000000000000000000000"
+
+
