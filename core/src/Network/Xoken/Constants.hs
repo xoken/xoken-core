@@ -192,6 +192,11 @@ bsv =
               , "seed.cascharia.com"
               , "satoshisvision.network"
               , "seed.satoshisvision.network"
+              , "106.14.176.25"
+              , "123.57.184.63"
+              , "18.157.234.254"
+              , "18.192.253.59"
+              , "3.125.35.60"
               ]
         , getBip44Coin = 0
         , getSigHashForkId = Nothing
