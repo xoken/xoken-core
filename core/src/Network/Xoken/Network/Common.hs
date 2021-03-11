@@ -43,7 +43,7 @@ module Network.Xoken.Network.Common
     , getVarIntBytesUsed
     ) where
 
-import Control.Monad (forM_, liftM2, replicateM, unless)
+import Control.Monad (forM_, liftM2, replicateM, unless, when)
 import Data.Bits (shiftL)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
@@ -413,18 +413,28 @@ data Version =
         , startHeight :: !Word32
               -- | relay transactions flag (BIP-37)
         , relay :: !Bool
+        , assocID :: !(Maybe VarString)
         }
     deriving (Eq, Show)
 
 instance Serialize Version where
     get =
-        Version <$> getWord32le <*> getWord64le <*> getWord64le <*> S.get <*> S.get <*> getWord64le <*> S.get <*>
-        getWord32le <*>
-        (go =<< isEmpty)
+        Version <$> getWord32le
+                <*> getWord64le
+                <*> getWord64le
+                <*> S.get
+                <*> S.get
+                <*> getWord64le
+                <*> S.get
+                <*> getWord32le
+                <*> (go =<< isEmpty)
+                <*> (getAssoc =<< isEmpty)
       where
         go True = return True
         go False = getBool
-    put (Version v s t ar as n ua sh r) = do
+        getAssoc True = return Nothing
+        getAssoc False = S.get
+    put (Version v s t ar as n ua sh r ai) = do
         putWord32le v
         putWord64le s
         putWord64le t
@@ -434,6 +444,7 @@ instance Serialize Version where
         put ua
         putWord32le sh
         putBool r
+        when (isJust ai) $ put ai
 
 -- | 0x00 is 'False', anything else is 'True'.
 getBool :: Get Bool
