@@ -25,6 +25,9 @@ arbitraryVarInt = VarInt <$> arbitrary
 arbitraryVarString :: Gen VarString
 arbitraryVarString = VarString <$> arbitraryBS
 
+arbitraryMaybeVarString :: Gen (Maybe VarString)
+arbitraryMaybeVarString = frequency [(1, return Nothing), (1, fmap Just arbitraryVarString)]
+
 -- | Arbitrary 'NetworkAddress'.
 arbitraryNetworkAddress :: Gen NetworkAddress
 arbitraryNetworkAddress = do
@@ -63,7 +66,8 @@ arbitraryVersion =
     arbitrary <*>
     arbitraryVarString <*>
     arbitrary <*>
-    arbitrary
+    arbitrary <*>
+    arbitraryMaybeVarString
 
 -- | Arbitrary non-empty 'Addr'.
 arbitraryAddr1 :: Gen Addr
