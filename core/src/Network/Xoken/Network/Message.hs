@@ -1,4 +1,4 @@
-{-|
+{- |
 Module      : Network.Xoken.Network.Message
 Copyright   : Xoken Labs
 License     : Open BSV License
@@ -9,16 +9,17 @@ Portability : POSIX
 Peer-to-peer network message serialization.
 -}
 module Network.Xoken.Network.Message
-      -- * Network Message
-    ( Message(..)
-    , MessageHeader(..)
-    , msgType
-    , putMessage
-    , getMessage
-    , getDeflatedBlock
-    , getConfirmedTx
-    , getConfirmedTxBatch
-    ) where
+--  Network Message
+    (
+    Message (..),
+    MessageHeader (..),
+    msgType,
+    putMessage,
+    getMessage,
+    getDeflatedBlock,
+    getConfirmedTx,
+    getConfirmedTxBatch,
+) where
 
 import Control.Applicative
 import Control.Monad (unless)
@@ -26,9 +27,9 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Maybe
 import Data.Serialize (Serialize, encode, get, put)
-import Data.Serialize.Get (Get, getByteString, getWord32be, getWord32le, isolate, lookAhead, lookAheadM)
-import Data.Serialize.Put (Putter, putByteString, putWord32be, putWord32le)
-import Data.Word (Word32)
+import Data.Serialize.Get (Get, getByteString, getWord32be, getWord32le, getWord64le, isolate, lookAhead, lookAheadM)
+import Data.Serialize.Put (Putter, putByteString, putWord32be, putWord32le, putWord64le)
+import Data.Word (Word32, Word64)
 import Network.Xoken.Block.Common
 import Network.Xoken.Block.Merkle
 import Network.Xoken.Constants
@@ -37,20 +38,19 @@ import Network.Xoken.Network.Common
 import Network.Xoken.Network.CompactBlock
 import Network.Xoken.Transaction.Common
 
--- | Data type representing the header of a 'Message'. All messages sent between
--- nodes contain a message header.
-data MessageHeader =
-    MessageHeader
-      -- | magic bytes identify network
-        { headMagic :: !Word32
-      -- | message type
-        , headCmd :: !MessageCommand
-      -- | length of payload
-        , headPayloadSize :: !Word32
-      -- | checksum of payload
-        , headChecksum :: !CheckSum32
-        }
-    deriving (Eq, Show)
+{- | Data type representing the header of a 'Message'. All messages sent between
+ nodes contain a message header.
+-}
+
+data MessageHeader = MessageHeader
+    { headMagic :: !Word32
+    , -- | message type
+      headCmd :: !MessageCommand
+    , -- | length of payload
+      headPayloadSize :: !Word32
+    , -- | checksum of payload
+      headChecksum :: !CheckSum32
+    }
 
 instance Serialize MessageHeader where
     get = MessageHeader <$> getWord32be <*> get <*> getWord32le <*> get
@@ -60,12 +60,13 @@ instance Serialize MessageHeader where
         putWord32le l
         put chk
 
--- | The 'Message' type is used to identify all the valid messages that can be
--- sent between bitcoin peers. Only values of type 'Message' will be accepted
--- by other bitcoin peers as bitcoin protocol messages need to be correctly
--- serialized with message headers. Serializing a 'Message' value will
--- include the 'MessageHeader' with the correct checksum value automatically.
--- No need to add the 'MessageHeader' separately.
+{- | The 'Message' type is used to identify all the valid messages that can be
+ sent between bitcoin peers. Only values of type 'Message' will be accepted
+ by other bitcoin peers as bitcoin protocol messages need to be correctly
+ serialized with message headers. Serializing a 'Message' value will
+ include the 'MessageHeader' with the correct checksum value automatically.
+ No need to add the 'MessageHeader' separately.
+-}
 data Message
     = MVersion !Version
     | MVerAck
@@ -134,39 +135,50 @@ getConfirmedTxBatch = fmap catMaybes $ some getConfirmedTx
 -- | Deserializer for network messages.
 getMessage :: Network -> Get Message
 getMessage net = do
-    (MessageHeader mgc cmd len chk) <- get
-    bs <- lookAhead $ getByteString $ fromIntegral len
-    unless (mgc == getNetworkMagic net) (fail $ "get: Invalid network magic bytes: " ++ show mgc)
-    unless (checkSum32 bs == chk) (fail $ "get: Invalid message checksum: " ++ show chk)
+    (MessageHeader mgc' cmd' len' chk') <- get
+    (mgc, cmd, len, chk) <- do
+                unless (mgc' == getNetworkMagic net) (fail $ "get: Invalid network magic bytes: " ++ show mgc')
+                if (len' == 0xFFFFFFFF) -- (cmd' == "extmsg") && 
+                    then do
+                        -- skip checksum calc as its expected to be invalid anyways
+                        cmdExtStr <- getByteString 12
+                        let cmdExt = stringToCommand cmdExtStr
+                        lenExt <- getWord64le
+                        return (mgc', cmdExt, fromIntegral lenExt, chk')
+                    else do
+                        bs <- lookAhead $ getByteString $ fromIntegral len'
+                        unless (checkSum32 bs == chk') (fail $ "get: Invalid message checksum: " ++ show chk')
+                        return (mgc', cmd', fromIntegral len', chk')
+
     if len > 0
         then isolate (fromIntegral len) $
-             case cmd of
-                 MCVersion -> MVersion <$> get
-                 MCAddr -> MAddr <$> get
-                 MCInv -> MInv <$> get
-                 MCGetData -> MGetData <$> get
-                 MCNotFound -> MNotFound <$> get
-                 MCGetBlocks -> MGetBlocks <$> get
-                 MCGetHeaders -> MGetHeaders <$> get
-                 MCTx -> MTx <$> get
-                 -- MCBlock -> MBlock <$> get
-                 MCMerkleBlock -> MMerkleBlock <$> get
-                 MCHeaders -> MHeaders <$> get
-                 MCPing -> MPing <$> get
-                 MCPong -> MPong <$> get
-                 MCAlert -> MAlert <$> get
-                 MCReject -> MReject <$> get
-                 MCOther c -> MOther c <$> getByteString (fromIntegral len)
-                 MCSendCompact -> MSendCompact <$> get
-                 MCCompactBlock -> MCompactBlock <$> get
-                 MCGetBlockTxns -> MGetBlockTxns <$> get
-                 MCBlockTxns -> MBlockTxns <$> get
+            case cmd of
+                MCVersion -> MVersion <$> get
+                MCAddr -> MAddr <$> get
+                MCInv -> MInv <$> get
+                MCGetData -> MGetData <$> get
+                MCNotFound -> MNotFound <$> get
+                MCGetBlocks -> MGetBlocks <$> get
+                MCGetHeaders -> MGetHeaders <$> get
+                MCTx -> MTx <$> get
+                -- MCBlock -> MBlock <$> get
+                MCMerkleBlock -> MMerkleBlock <$> get
+                MCHeaders -> MHeaders <$> get
+                MCPing -> MPing <$> get
+                MCPong -> MPong <$> get
+                MCAlert -> MAlert <$> get
+                MCReject -> MReject <$> get
+                MCOther c -> MOther c <$> getByteString (fromIntegral len)
+                MCSendCompact -> MSendCompact <$> get
+                MCCompactBlock -> MCompactBlock <$> get
+                MCGetBlockTxns -> MGetBlockTxns <$> get
+                MCBlockTxns -> MBlockTxns <$> get
         else case cmd of
-                 MCGetAddr -> return MGetAddr
-                 MCVerAck -> return MVerAck
-                 MCMempool -> return MMempool
-                 MCSendHeaders -> return MSendHeaders
-                 _ -> fail $ "get: Invalid command " ++ show cmd
+            MCGetAddr -> return MGetAddr
+            MCVerAck -> return MVerAck
+            MCMempool -> return MMempool
+            MCSendHeaders -> return MSendHeaders
+            _ -> fail $ "get: Invalid command " ++ show cmd
 
 -- | Serializer for network messages.
 putMessage :: Network -> Putter Message
