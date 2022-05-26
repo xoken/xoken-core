@@ -84,7 +84,7 @@ data PushDataType
     | OPDATA2
       -- | next four bytes contains the number of bytes to be pushed
     | OPDATA4
-    deriving (Show, Read, Eq, Generic, Hashable)
+    deriving (Show, Read, Eq, Ord, Generic, Hashable)
 
 -- | Data type representing an operator allowed inside a 'Script'.
 data ScriptOp
@@ -209,7 +209,7 @@ data ScriptOp
     | OP_PUBKEYHASH
     | OP_PUBKEY
     | OP_INVALIDOPCODE !Word8
-    deriving (Show, Read, Eq, Generic, Hashable)
+    deriving (Show, Read, Eq, Ord, Generic, Hashable)
 
 instance Serialize ScriptOp where
     get = go =<< (fromIntegral <$> getWord8)
