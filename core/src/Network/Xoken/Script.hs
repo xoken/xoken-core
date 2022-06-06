@@ -18,3 +18,6 @@ import Network.Xoken.Script.Common as X
 import Network.Xoken.Script.SigHash as X
 import Network.Xoken.Script.Standard as X
 import Network.Xoken.Script.Interpreter as X
+
+import Network.Xoken.Script.Interpreter.Commands as X
+import Network.Xoken.Script.Interpreter.Util as X
